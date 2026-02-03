@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import time
+import threading
 
 
 @dataclass
@@ -28,24 +29,28 @@ class SessionStore:
     def __init__(self, ttl_seconds: int) -> None:
         self._ttl_seconds = max(60, ttl_seconds)
         self._store: dict[str, tuple[Session, float]] = {}
+        self._lock = threading.Lock()
 
     def get(self, key: str) -> Session | None:
-        item = self._store.get(key)
-        if not item:
-            return None
+        with self._lock:
+            item = self._store.get(key)
+            if not item:
+                return None
 
-        session, expires_at = item
-        now = time.time()
-        if now >= expires_at:
-            self._store.pop(key, None)
-            return None
+            session, expires_at = item
+            now = time.time()
+            if now >= expires_at:
+                self._store.pop(key, None)
+                return None
 
-        return session
+            return session
 
     def upsert(self, key: str, session: Session) -> None:
         session.touch()
         expires_at = session.updated_at + self._ttl_seconds
-        self._store[key] = (session, expires_at)
+        with self._lock:
+            self._store[key] = (session, expires_at)
 
     def clear(self, key: str) -> None:
-        self._store.pop(key, None)
+        with self._lock:
+            self._store.pop(key, None)

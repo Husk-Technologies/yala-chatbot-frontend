@@ -15,6 +15,66 @@ Menu-driven WhatsApp webhook for Yala (event code → name → menu: brochure / 
 
 python -m src.app
 
+## Docker (bot + Redis)
+
+1. Copy `.env.example` to `.env` and fill in the required values.
+2. Start services:
+   - `docker compose up --build`
+
+This runs:
+- the bot on `http://localhost:5000`
+- Redis on `localhost:6379`
+
+## Deploy to Render (Web Service + Redis)
+
+This repo includes a Render Blueprint at `render.yaml` that creates:
+- a Docker-based Web Service (the Flask/Gunicorn app)
+- a managed Redis instance (for shared sessions + cross-worker de-dupe)
+
+### Steps
+
+1. Push this repo to GitHub.
+2. In Render, choose **New → Blueprint** and select your repo.
+3. Render will read `render.yaml` and provision the services.
+4. In the Web Service settings, set these required environment variables:
+   - `PUBLIC_BASE_URL` = your Render service URL (e.g. `https://<service>.onrender.com`)
+   - `META_WA_ACCESS_TOKEN`
+   - `META_WA_PHONE_NUMBER_ID`
+   - `META_WEBHOOK_VERIFY_TOKEN`
+   - `META_APP_SECRET`
+   - `BACKEND_BASE_URL` (if you’re using the backend integration)
+   - `BACKEND_AUTH_BEARER_TOKEN` (only if your backend requires it)
+
+### Meta webhook configuration
+
+In the Meta developer dashboard (WhatsApp Cloud API):
+- Callback URL: `https://<service>.onrender.com/webhook/meta`
+- Verify token: set to the same value as `META_WEBHOOK_VERIFY_TOKEN`
+
+Use `https://<service>.onrender.com/health` to confirm the service is up.
+
+## Production notes (concurrency)
+
+For multiple concurrent users, run behind a production WSGI server (not Flask's dev server).
+
+- Example (2 workers, 8 threads each):
+   - `gunicorn -w 2 --threads 8 -b 0.0.0.0:5000 src.app:app`
+
+Background Meta webhook processing is handled by a bounded worker pool to keep webhook responses fast.
+You can tune it with:
+
+- `WEBHOOK_WORKER_THREADS` (default `16`)
+- `WEBHOOK_MAX_INFLIGHT` (default `WEBHOOK_WORKER_THREADS * 8`)
+
+### Redis (recommended for multiple workers/instances)
+
+If you run more than one worker/process, in-memory sessions will not be shared and users may lose conversation state.
+Enable Redis to share sessions across workers and to de-dupe Meta webhook retries across workers:
+
+- `REDIS_URL` (e.g. `redis://localhost:6379/0`)
+- `REDIS_KEY_PREFIX` (default `wa_bot`)
+- `REDIS_REQUIRED=1` to fail fast if Redis is not reachable
+
 ## Meta WhatsApp Cloud API (Webhook)
 
 This repo also supports receiving messages via Meta WhatsApp Cloud API.
@@ -47,14 +107,6 @@ Optional local debug endpoints (disabled by default):
 - View last webhook receipts: `GET /debug/meta/last?token=<DEBUG_TOKEN>`
 - Send a test outbound message: `POST /debug/meta/send?token=<DEBUG_TOKEN>` with JSON `{ "to": "<wa_id>", "body": "hello" }`
 
-## Legacy: Twilio WhatsApp
-
-This repo previously supported Twilio WhatsApp webhooks via TwiML at `POST /webhook`.
-
-To enable it:
-- Set `CHANNEL=twilio` or `ENABLE_TWILIO_WEBHOOK=1`
-- Configure Twilio to send webhooks to `https://<your-host>/webhook`
-
 ## Environment Variables
 
 - PUBLIC_BASE_URL (required to send the brochure as media)
@@ -62,16 +114,3 @@ To enable it:
 - BACKEND_BASE_URL (Yala API base url, e.g. https://api.example.com/)
 - BACKEND_TIMEOUT_SECONDS (optional, default 15)
 - BACKEND_AUTH_BEARER_TOKEN (optional, if backend requires auth)
-- TWILIO_AUTH_TOKEN (only required if VERIFY_TWILIO_SIGNATURES=1)
-- VERIFY_TWILIO_SIGNATURES (default: 0)
-
-## Optional: Interactive Menu (Buttons)
-
-This project can send an interactive WhatsApp menu using Twilio's Content API.
-
-1. Create a Content template in Twilio that renders a WhatsApp interactive menu (buttons/list).
-2. Configure the button replies to send back `1`, `2`, `3`.
-3. Set:
-   - `INTERACTIVE_MENU_MODE=content`
-   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`
-   - `TWILIO_CONTENT_SID_MENU=<your content sid>`

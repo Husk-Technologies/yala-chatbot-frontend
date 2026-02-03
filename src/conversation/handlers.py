@@ -95,6 +95,10 @@ def _menu_text(guest_name: str) -> str:
     )
 
 
+def _menu_hint() -> str:
+    return "\n\nReply *0* (or type *menu*) to see options."
+
+
 def _normalize_event_code(code: str) -> str:
     return (code or "").strip().upper()
 
@@ -426,15 +430,15 @@ def handle_incoming_message(
 
                 if brochure.status != "ready" or not brochure.brochure:
                     error = brochure.error or "Brochure is not available right now."
-                    return OutgoingMessage(text=f"Sorry, {error}\n\n" + _menu_text(session.guest_name))
+                    return OutgoingMessage(text=f"Sorry, {error}." + _menu_hint())
 
                 # Stay in MENU state and show menu again after sending the brochure.
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
                     text=(
                         "Here is the event brochure.\n"
-                        "You may download it to your phone.\n\n"
-                        + _menu_text(session.guest_name)
+                        "You may download it to your phone."
+                        + _menu_hint()
                     ),
                     media_url=brochure.brochure.media_url,
                 )
@@ -445,15 +449,16 @@ def handle_incoming_message(
 
                 intent = backend.create_donation_intent(session.event_id, session.guest_name)
                 if intent.status == "ready" and intent.intent:
-                    return OutgoingMessage(text=intent.intent.instructions + "\n\n" + _menu_text(session.guest_name))
+                    return OutgoingMessage(text=intent.intent.instructions + _menu_hint())
 
                 if intent.status == "unavailable" and intent.intent:
-                    return OutgoingMessage(text=intent.intent.instructions + "\n\n" + _menu_text(session.guest_name))
+                    return OutgoingMessage(text=intent.intent.instructions + _menu_hint())
 
                 return OutgoingMessage(
                     text=(
                         "We couldn’t complete the donation right now.\n"
-                        "Please try again later.\n\n" + _menu_text(session.guest_name)
+                        "Please try again later."
+                        + _menu_hint()
                     )
                 )
 
@@ -500,14 +505,12 @@ def handle_incoming_message(
                     error = loc.error or "Location details are not available yet."
                     lines = [f"Sorry, {error}"]
 
-                lines.append("")
-                lines.append(_menu_text(session.guest_name))
-                return OutgoingMessage(text="\n".join(lines))
+                return OutgoingMessage(text="\n".join(lines) + _menu_hint())
 
         return OutgoingMessage(
             text=(
-                "Please reply with *1*, *2*, *3*, or *4* (or type *brochure*, *donate*, *message*, *location*).\n\n"
-                + _menu_text(session.guest_name)
+                "Please reply with *1*, *2*, *3*, or *4* (or type *brochure*, *donate*, *message*, *location*)."
+                + _menu_hint()
             )
         )
 
@@ -515,7 +518,7 @@ def handle_incoming_message(
         if not session.guest_name or not session.event_id:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
-            return OutgoingMessage(text="Missing context. Returning to main menu.\n\n" + _menu_text(session.guest_name or ""))
+            return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
 
         if not session.guest_id:
             session.state = ConversationState.MENU.value
@@ -523,7 +526,8 @@ def handle_incoming_message(
             return OutgoingMessage(
                 text=(
                     "We couldn’t identify your guest profile.\n"
-                    "Please type *restart* and try again.\n\n" + _menu_text(session.guest_name)
+                    "Please type *restart* and try again."
+                    + _menu_hint()
                 )
             )
 
@@ -564,14 +568,16 @@ def handle_incoming_message(
             return OutgoingMessage(
                 text=(
                     "Thank you.\n"
-                    "Your message has been sent to the family.\n\n" + _menu_text(session.guest_name)
+                    "Your message has been sent to the family."
+                    + _menu_hint()
                 )
             )
 
         return OutgoingMessage(
             text=(
                 "Sorry, we couldn’t send your message right now.\n"
-                "Please try again later.\n\n" + _menu_text(session.guest_name)
+                "Please try again later."
+                + _menu_hint()
             )
         )
 

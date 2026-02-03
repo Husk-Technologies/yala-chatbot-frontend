@@ -14,3 +14,9 @@ wheels/
 
 # OS/editor noise
 .DS_Store
+
+# Not needed
+scripts/
+.github/
+plan.md
+backend.md

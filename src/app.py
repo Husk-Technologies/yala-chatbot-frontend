@@ -5,11 +5,11 @@ import hashlib
 from typing import Any
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor
+import uuid
 
 from dotenv import load_dotenv, find_dotenv
 from flask import Flask, request
-from twilio.twiml.messaging_response import MessagingResponse
-from twilio.request_validator import RequestValidator
 
 load_dotenv(find_dotenv())
 
@@ -21,12 +21,45 @@ app = Flask(__name__)
 from .backend.http_client import HttpBackendClient, HttpBackendConfig
 from .config import SETTINGS
 from .conversation.handlers import handle_incoming_message
-from .integrations.interactive_menu import send_interactive_menu
 from .integrations.meta_cloud import MetaWhatsAppCloud
 from .storage.session_store import SessionStore
+from .storage.redis_session_store import RedisDedupe, RedisLock, RedisSessionStore, create_redis_client
+
+_REDIS = None
+_REDIS_DEDUPE: RedisDedupe | None = None
 
 
-SESSION_STORE = SessionStore(ttl_seconds=SETTINGS.session_ttl_seconds)
+def _init_redis() -> None:
+    global _REDIS, _REDIS_DEDUPE
+    if _REDIS is not None or not SETTINGS.redis_url:
+        return
+    try:
+        client = create_redis_client(SETTINGS.redis_url)
+        if client is None:
+            return
+        # Validate connectivity early in production if requested.
+        if SETTINGS.redis_required:
+            client.ping()
+        _REDIS = client
+        _REDIS_DEDUPE = RedisDedupe(redis_client=client, key_prefix=SETTINGS.redis_key_prefix)
+        logger.info("Redis enabled for sessions/de-dupe")
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to initialize Redis")
+        if SETTINGS.redis_required:
+            raise
+
+
+_init_redis()
+
+
+if _REDIS is not None:
+    SESSION_STORE = RedisSessionStore(
+        redis_client=_REDIS,
+        ttl_seconds=SETTINGS.session_ttl_seconds,
+        key_prefix=SETTINGS.redis_key_prefix,
+    )
+else:
+    SESSION_STORE = SessionStore(ttl_seconds=SETTINGS.session_ttl_seconds)
 BACKEND = HttpBackendClient(
     HttpBackendConfig(
         base_url=SETTINGS.backend_base_url,
@@ -43,26 +76,83 @@ META = MetaWhatsAppCloud(SETTINGS)
 # Keep a small ring buffer of recent Meta webhook receipts for debugging.
 _META_LAST: list[dict[str, object]] = []
 _META_LAST_MAX = 25
+_META_LAST_LOCK = threading.Lock()
 
 # Track recently handled Meta message IDs to avoid duplicate processing
 # when Meta retries webhook deliveries.
 _META_SEEN: dict[str, float] = {}
 _META_SEEN_TTL_SECONDS = 24 * 60 * 60
+_META_SEEN_LOCK = threading.Lock()
+
+
+# Background processing:
+# - Use a bounded worker pool (instead of spawning unbounded threads per message)
+# - Serialize work per sender to avoid racing the session state machine
+_WORKER_THREADS = max(2, int(os.getenv("WEBHOOK_WORKER_THREADS", "16")))
+_MAX_INFLIGHT = max(_WORKER_THREADS, int(os.getenv("WEBHOOK_MAX_INFLIGHT", str(_WORKER_THREADS * 8))))
+_EXECUTOR: ThreadPoolExecutor | None = None
+_EXECUTOR_LOCK = threading.Lock()
+_INFLIGHT_SEM = threading.BoundedSemaphore(_MAX_INFLIGHT)
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    # Lazily create the executor so pre-fork servers (e.g. gunicorn) don't
+    # instantiate a thread pool in the master process.
+    global _EXECUTOR
+    if _EXECUTOR is not None:
+        return _EXECUTOR
+    with _EXECUTOR_LOCK:
+        if _EXECUTOR is None:
+            _EXECUTOR = ThreadPoolExecutor(max_workers=_WORKER_THREADS, thread_name_prefix="webhook")
+        return _EXECUTOR
+
+_SENDER_LOCKS: dict[str, tuple[threading.Lock, float]] = {}
+_SENDER_LOCKS_LOCK = threading.Lock()
+_SENDER_LOCKS_TTL_SECONDS = 60 * 60  # keep inactive sender locks for 1 hour
+
+
+def _sender_lock(sender_key: str) -> threading.Lock:
+    now = time.time()
+    key = (sender_key or "").strip() or "unknown"
+    with _SENDER_LOCKS_LOCK:
+        item = _SENDER_LOCKS.get(key)
+        if item is None:
+            lock = threading.Lock()
+            _SENDER_LOCKS[key] = (lock, now)
+        else:
+            lock, _ = item
+            _SENDER_LOCKS[key] = (lock, now)
+
+        # Opportunistic cleanup to prevent unbounded growth.
+        if len(_SENDER_LOCKS) > 500:
+            expired_keys = [k for k, (_, ts) in _SENDER_LOCKS.items() if ts <= now - _SENDER_LOCKS_TTL_SECONDS]
+            for k in expired_keys:
+                _SENDER_LOCKS.pop(k, None)
+
+        return lock
 
 
 def _meta_seen(msg_id: str) -> bool:
     now = time.time()
-    # opportunistic cleanup
-    expired = [k for k, exp in _META_SEEN.items() if exp <= now]
-    for k in expired:
-        _META_SEEN.pop(k, None)
-
     if not msg_id:
         return False
-    if msg_id in _META_SEEN:
-        return True
-    _META_SEEN[msg_id] = now + _META_SEEN_TTL_SECONDS
-    return False
+
+    if _REDIS_DEDUPE is not None:
+        try:
+            return _REDIS_DEDUPE.seen(msg_id, ttl_seconds=_META_SEEN_TTL_SECONDS)
+        except Exception:  # noqa: BLE001
+            logger.exception("Redis de-dupe failed; falling back to in-memory")
+
+    with _META_SEEN_LOCK:
+        # opportunistic cleanup
+        expired = [k for k, exp in _META_SEEN.items() if exp <= now]
+        for k in expired:
+            _META_SEEN.pop(k, None)
+
+        if msg_id in _META_SEEN:
+            return True
+        _META_SEEN[msg_id] = now + _META_SEEN_TTL_SECONDS
+        return False
 
 
 def _debug_allowed() -> bool:
@@ -132,40 +222,158 @@ def _extract_meta_messages(payload: dict[str, Any]) -> list[tuple[str, str, str]
     return out
 
 
-def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
-    outgoing = handle_incoming_message(
-        sender_key=from_wa,
-        incoming_text=incoming_text,
-        store=SESSION_STORE,
-        backend=BACKEND,
-        settings=SETTINGS,
+def _menu_footer_text(guest_name: str) -> str:
+    # Must match the text version used by the conversation handler.
+    return (
+        f"Thank you, {guest_name}.\n"
+        "How can we help you today?\n\n"
+        "1. 📄 Download event brochure\n"
+        "2. 💝 Give / Donate\n"
+        "3. 🕊️ Send condolence / message\n"
+        "4. 📍 Location"
     )
 
-    # Send brochure as document when a media URL is present; otherwise send text.
-    if outgoing.media_url:
-        logger.info("Sending document to %s via link: %s", from_wa, outgoing.media_url)
-        META.send_document(
-            to=from_wa,
-            link=outgoing.media_url,
-            caption=outgoing.text,
-            filename="brochure.pdf",
-        )
-    else:
-        META.send_text(to=from_wa, body=outgoing.text)
+
+_MENU_MARKER = (
+    "\n1. 📄 Download event brochure\n"
+    "2. 💝 Give / Donate\n"
+    "3. 🕊️ Send condolence / message\n"
+    "4. 📍 Location"
+)
 
 
-def _validate_twilio_request() -> bool:
-    if not SETTINGS.verify_twilio_signatures:
-        return True
+def _strip_menu_footer(text: str, guest_name: str | None) -> tuple[str, bool]:
+    """Remove the trailing text menu from handler output.
 
-    if not SETTINGS.twilio_auth_token:
-        logger.warning("VERIFY_TWILIO_SIGNATURES=1 but TWILIO_AUTH_TOKEN is missing")
-        return False
+    Returns (stripped_text, had_menu_footer).
+    """
 
-    signature = request.headers.get("X-Twilio-Signature", "")
-    validator = RequestValidator(SETTINGS.twilio_auth_token)
-    # Twilio validation uses the full URL and the POST params.
-    return validator.validate(request.url, request.form.to_dict(flat=True), signature)
+    t = text or ""
+
+    # Preferred path: exact footer match when we know the guest name.
+    if guest_name:
+        footer = _menu_footer_text(guest_name)
+        if t.endswith("\n\n" + footer):
+            return t[: -len("\n\n" + footer)].rstrip(), True
+        if t.endswith(footer):
+            return t[: -len(footer)].rstrip(), True
+
+    # Robust fallback: strip from the start of the menu marker.
+    idx = t.rfind(_MENU_MARKER)
+    if idx != -1:
+        return t[:idx].rstrip(), True
+
+    return t, False
+
+
+def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
+    # Ensure a single in-flight handler per sender to avoid session races.
+    # - Local lock covers single-process setups
+    # - Optional Redis lock reduces cross-worker races when running multiple instances
+    local_lock = _sender_lock(from_wa)
+
+    redis_lock: RedisLock | None = None
+    if _REDIS is not None:
+        try:
+            lock_key = f"{SETTINGS.redis_key_prefix}:lock:sender:{(from_wa or '').strip() or 'unknown'}"
+            redis_lock = RedisLock(
+                redis_client=_REDIS,
+                key=lock_key,
+                token=str(uuid.uuid4()),
+                ttl_ms=30_000,
+            )
+        except Exception:  # noqa: BLE001
+            redis_lock = None
+
+    acquired_redis = False
+    if redis_lock is not None:
+        # best-effort wait a little to preserve ordering
+        deadline = time.time() + 3.0
+        while time.time() < deadline:
+            try:
+                if redis_lock.try_acquire():
+                    acquired_redis = True
+                    break
+            except Exception:  # noqa: BLE001
+                logger.exception("Redis sender lock error")
+                break
+            time.sleep(0.05)
+
+    if redis_lock is not None and not acquired_redis:
+        logger.warning("Could not acquire redis sender lock quickly; proceeding")
+
+    try:
+        with local_lock:
+            outgoing = handle_incoming_message(
+                sender_key=from_wa,
+                incoming_text=incoming_text,
+                store=SESSION_STORE,
+                backend=BACKEND,
+                settings=SETTINGS,
+            )
+
+            # Pull the latest session so we can keep menu behavior consistent even when
+            # `OutgoingMessage.guest_name` isn't set for non-menu replies.
+            session = SESSION_STORE.get(from_wa)
+            guest_name = (session.guest_name if session and session.guest_name else outgoing.guest_name)
+
+            # If we're on Meta and this is the main menu screen, prefer sending an interactive list.
+            # The row IDs are designed to flow through the existing `_normalize_choice` logic.
+            if outgoing.interactive_menu and not outgoing.media_url:
+                menu_body = (
+                    f"Thank you, {guest_name}.\nHow can we help you today?"
+                    if guest_name
+                    else "How can we help you today?"
+                )
+                ok = META.send_list_menu(
+                    to=from_wa,
+                    body=menu_body,
+                    button_text="Choose an option",
+                    section_title="Yala Menu",
+                    rows=[
+                        {"id": "brochure", "title": "Download brochure", "description": "Get the event PDF"},
+                        {"id": "donate", "title": "Give / Donate", "description": "Support the family"},
+                        {"id": "condolence", "title": "Send condolence", "description": "Send a message"},
+                        {"id": "location", "title": "Location", "description": "View venue details"},
+                    ],
+                )
+                if ok:
+                    return
+                # If interactive send fails, fall back to plain text.
+
+            # Strip any accidental trailing menu text from handler output.
+            main_text, _ = _strip_menu_footer(outgoing.text, guest_name)
+
+            # Send brochure as document when a media URL is present; otherwise send text.
+            if outgoing.media_url:
+                logger.info("Sending document to %s via link: %s", from_wa, outgoing.media_url)
+                META.send_document(
+                    to=from_wa,
+                    link=outgoing.media_url,
+                    caption=main_text,
+                    filename="brochure.pdf",
+                )
+            else:
+                META.send_text(to=from_wa, body=main_text)
+    finally:
+        if redis_lock is not None:
+            try:
+                redis_lock.release()
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to release redis sender lock")
+
+
+def _process_meta_message_task(from_wa: str, incoming_text: str) -> None:
+    try:
+        _handle_one_meta_message(from_wa, incoming_text)
+    except Exception:  # noqa: BLE001
+        logger.exception("Unhandled exception while processing meta message")
+    finally:
+        try:
+            _INFLIGHT_SEM.release()
+        except ValueError:
+            # Semaphore already at max; should not happen, but don't crash worker.
+            pass
 
 
 @app.get("/health")
@@ -178,7 +386,6 @@ def health() -> tuple[str, int]:
 def debug_meta() -> tuple[dict[str, object], int]:
     return (
         {
-            "channel": SETTINGS.channel,
             "meta": {
                 "configured": META.is_configured(),
                 "api_version": SETTINGS.meta_api_version,
@@ -198,7 +405,8 @@ def debug_meta() -> tuple[dict[str, object], int]:
 def debug_meta_last() -> tuple[dict[str, object], int]:
     if not _debug_allowed():
         return {"error": "forbidden"}, 403
-    return {"count": len(_META_LAST), "items": list(_META_LAST)}, 200
+    with _META_LAST_LOCK:
+        return {"count": len(_META_LAST), "items": list(_META_LAST)}, 200
 
 
 @app.post("/debug/meta/send")
@@ -247,72 +455,32 @@ def meta_webhook() -> tuple[str, int]:
 
     extracted = _extract_meta_messages(payload)
 
-    _META_LAST.append(
-        {
-            "ts": int(time.time()),
-            "messages": len(extracted),
-            "has_entry": bool(payload.get("entry")),
-        }
-    )
-    if len(_META_LAST) > _META_LAST_MAX:
-        del _META_LAST[: len(_META_LAST) - _META_LAST_MAX]
+    with _META_LAST_LOCK:
+        _META_LAST.append(
+            {
+                "ts": int(time.time()),
+                "messages": len(extracted),
+                "has_entry": bool(payload.get("entry")),
+            }
+        )
+        if len(_META_LAST) > _META_LAST_MAX:
+            del _META_LAST[: len(_META_LAST) - _META_LAST_MAX]
 
     # Respond quickly to avoid webhook retries; do processing in background.
     for from_wa, incoming_text, msg_id in extracted:
         if msg_id and _meta_seen(msg_id):
             continue
         logger.info("Meta incoming from %s: %s", from_wa, (incoming_text or "").strip())
-        threading.Thread(
-            target=_handle_one_meta_message,
-            args=(from_wa, incoming_text),
-            daemon=True,
-        ).start()
+        if not _INFLIGHT_SEM.acquire(blocking=False):
+            logger.warning(
+                "Dropping/deferring meta message due to saturation (max_inflight=%s)",
+                _MAX_INFLIGHT,
+            )
+            continue
+
+        _get_executor().submit(_process_meta_message_task, from_wa, incoming_text)
 
     return "ok", 200
-
-
-@app.post("/")
-@app.post("/webhook")
-def webhook() -> str:
-    if SETTINGS.channel != "twilio" and not SETTINGS.enable_twilio_webhook:
-        response = MessagingResponse()
-        response.message(
-            "This server is configured for WhatsApp Cloud API. "
-            "Use /webhook/meta for Meta webhooks."
-        )
-        return str(response)
-
-    if not _validate_twilio_request():
-        response = MessagingResponse()
-        response.message("Invalid request signature.")
-        return str(response)
-
-    incoming_text = request.form.get("Body", "")
-    sender = request.form.get("From", "")
-    sender_key = sender.strip() or "unknown"
-
-    logger.info("Incoming message from %s: %s", sender_key, (incoming_text or "").strip())
-
-    outgoing = handle_incoming_message(
-        sender_key=sender_key,
-        incoming_text=incoming_text,
-        store=SESSION_STORE,
-        backend=BACKEND,
-        settings=SETTINGS,
-    )
-
-    # Optional: send an interactive WhatsApp menu via Twilio Content API.
-    # This only triggers for the plain menu screen (no media) and falls back to text.
-    if outgoing.interactive_menu and not outgoing.media_url:
-        guest_name = outgoing.guest_name or ""
-        if send_interactive_menu(to=sender_key, guest_name=guest_name, settings=SETTINGS):
-            return str(MessagingResponse())
-
-    response = MessagingResponse()
-    msg = response.message(outgoing.text)
-    if outgoing.media_url:
-        msg.media(outgoing.media_url)
-    return str(response)
 
 
 if __name__ == "__main__":

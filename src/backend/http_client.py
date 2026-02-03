@@ -4,6 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin
+import threading
 
 import requests
 
@@ -49,6 +50,23 @@ class HttpBackendClient(BackendClient):
         self._default_event_location = config.default_event_location
         self._default_event_location_url = config.default_event_location_url
 
+        # Keep one requests.Session per worker thread for connection pooling
+        # without sharing a Session across threads.
+        self._local = threading.local()
+
+    def _session(self) -> requests.Session:
+        sess = getattr(self._local, "session", None)
+        if sess is None:
+            sess = requests.Session()
+            self._local.session = sess
+        return sess
+
+    def _timeout(self) -> tuple[float, float]:
+        # requests timeout is (connect, read)
+        connect = min(3.0, float(self._timeout_seconds))
+        read = float(self._timeout_seconds)
+        return (connect, read)
+
     def _url(self, path: str) -> str:
         base = self._base_url.rstrip("/")
         p = path.lstrip("/")
@@ -67,7 +85,7 @@ class HttpBackendClient(BackendClient):
 
         url = self._url(path)
         try:
-            resp = requests.get(url, headers=self._headers(bearer_token), timeout=self._timeout_seconds)
+            resp = self._session().get(url, headers=self._headers(bearer_token), timeout=self._timeout())
         except Exception as exc:  # noqa: BLE001
             logger.exception("Backend request failed: %s", url)
             return 0, None, str(exc)
@@ -99,11 +117,11 @@ class HttpBackendClient(BackendClient):
 
         url = self._url(path)
         try:
-            resp = requests.post(
+            resp = self._session().post(
                 url,
                 headers=self._headers(bearer_token),
                 json=payload,
-                timeout=self._timeout_seconds,
+                timeout=self._timeout(),
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("Backend request failed: %s", url)

@@ -1,0 +1,34 @@
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      # Shared sessions + cross-worker de-dupe
+      - REDIS_URL=redis://redis:6379/0
+      - REDIS_REQUIRED=1
+      - REDIS_KEY_PREFIX=wa_bot
+      # Sensible defaults for background processing (override as needed)
+      - WEBHOOK_WORKER_THREADS=16
+      - WEBHOOK_MAX_INFLIGHT=128
+
+volumes:
+  redis-data:
