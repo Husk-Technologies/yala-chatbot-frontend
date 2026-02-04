@@ -52,4 +52,5 @@ services:
   - type: redis
     name: whatsapp-bot-redis
     plan: starter
+    ipAllowList: []
     maxmemoryPolicy: allkeys-lru
