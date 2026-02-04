@@ -29,7 +29,8 @@ This runs:
 
 This repo includes a Render Blueprint at `render.yaml` that creates:
 - a Docker-based Web Service (the Flask/Gunicorn app)
-- a managed Redis instance (for shared sessions + cross-worker de-dupe)
+
+Note: Render’s managed Redis typically requires adding a payment method. The provided `render.yaml` is configured to deploy the web service on the free plan without Redis. You can still add Redis later using an external provider by setting `REDIS_URL`.
 
 ### Steps
 
@@ -52,6 +53,16 @@ In the Meta developer dashboard (WhatsApp Cloud API):
 - Verify token: set to the same value as `META_WEBHOOK_VERIFY_TOKEN`
 
 Use `https://<service>.onrender.com/health` to confirm the service is up.
+
+### If you deploy without Redis (free / no payment method)
+
+This is fine for cloud testing, but be aware:
+- Sessions are in-memory per instance, so a restart can reset active conversations.
+- If you scale to multiple instances/workers, sessions won’t be shared.
+
+If you later want Redis, set these env vars on Render:
+- `REDIS_URL` (from your provider)
+- `REDIS_REQUIRED=1`
 
 ## Production notes (concurrency)
 

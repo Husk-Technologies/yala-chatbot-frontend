@@ -2,18 +2,17 @@ services:
   - type: web
     name: whatsapp-bot
     env: docker
-    plan: starter
+    plan: free
     autoDeploy: true
     healthCheckPath: /health
     envVars:
       # App settings
+      # NOTE: Render managed Redis requires a paid plan/payment method.
+      # If you later use an external Redis (e.g. Upstash), set REDIS_URL in the Render dashboard.
       - key: REDIS_URL
-        fromService:
-          type: redis
-          name: whatsapp-bot-redis
-          property: connectionString
+        sync: false
       - key: REDIS_REQUIRED
-        value: "1"
+        value: "0"
       - key: REDIS_KEY_PREFIX
         value: "wa_bot"
       - key: SESSION_TTL_SECONDS
@@ -48,9 +47,3 @@ services:
       # Disable debug endpoints by default
       - key: DEBUG_ENDPOINTS
         value: "0"
-
-  - type: redis
-    name: whatsapp-bot-redis
-    plan: starter
-    ipAllowList: []
-    maxmemoryPolicy: allkeys-lru
