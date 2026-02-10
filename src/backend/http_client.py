@@ -325,15 +325,39 @@ class HttpBackendClient(BackendClient):
                 condolence_id = condolence.get("_id")
         return SubmitResult(status="ok", id=str(condolence_id) if condolence_id else None)
 
-    def create_donation_intent(self, event_id: str, guest_name: str) -> DonationIntentResult:
-        # Pending backend endpoint.
+    def create_donation_intent(
+        self,
+        event_id: str,
+        guest_id: str,
+        amount: float,
+        token: str | None = None,
+    ) -> DonationIntentResult:
+        payload = {
+            "funeralUniqueCode": event_id,
+            "guestId": guest_id,
+            "donationAmount": amount,
+        }
+        status_code, data, error = self._post_json("make-donation", payload, bearer_token=token)
+
+        if status_code == 404:
+            # Funeral does not accept donations or not found
+            # The API doc says: "This event does not accept donations"
+            return DonationIntentResult(status="unavailable", error=error)
+
+        if error or not data:
+            return DonationIntentResult(status="error", error=error)
+
+        checkout_url = data.get("url")
+        reference = data.get("reference")
+
+        if not checkout_url:
+            return DonationIntentResult(status="error", error="Missing checkout URL in response")
+
         return DonationIntentResult(
-            status="unavailable",
+            status="ready",
             intent=DonationIntent(
-                instructions=(
-                    "Thank you for your willingness to support. "
-                    "Donations are not available yet. Please try again later."
-                )
+                checkout_url=checkout_url,
+                reference=reference,
             ),
         )
 

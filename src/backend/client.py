@@ -33,7 +33,8 @@ class BrochureResult:
 
 @dataclass(frozen=True)
 class DonationIntent:
-    instructions: str
+    checkout_url: str
+    reference: str | None = None
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,13 @@ class BackendClient(Protocol):
         token: str | None = None,
     ) -> SubmitResult: ...
 
-    def create_donation_intent(self, event_id: str, guest_name: str) -> DonationIntentResult: ...
+    def create_donation_intent(
+        self,
+        event_id: str,
+        guest_id: str,
+        amount: float,
+        token: str | None = None,
+    ) -> DonationIntentResult: ...
 
     def check_guest_registration(self, phone_number: str) -> GuestAuthResult: ...
 

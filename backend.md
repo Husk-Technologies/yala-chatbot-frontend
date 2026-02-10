@@ -299,6 +299,89 @@ Missing or invalid guestId
 Empty or invalid message
 Authorization / authentication failures (if protected)
 
+# Make donations
+Overview
+Initializes a donation for a funeral guest and returns a payment checkout URL (via Paystack).
+POST {{base_url}}make-donation
+The {{base_url}} variable is resolved from your active environment (e.g., the yala url environment).
+
+StartFragment
+Authorization
+This endpoint requires an authenticated request. If the token is invalid or missing, the API may return:
+
+
+JSON
+
+401 Unauthorized
+{
+  "success": false,
+  "message": "Invalid token"
+}
+
+
+Request
+Method: POST
+URL: {{base_url}}make-donation
+Body type: raw → JSON
+
+Request body schema:
+
+
+JSON
+
+{
+  "funeralUniqueCode": "DE2022",             // String. Unique code identifying the funeral.
+  "guestId": "69764a754c55dc7bd8cda7d4",    // String. ID of the guest making the donation.
+  "donationAmount": 2                       // Number. Donation amount (currency defined by backend).
+}
+
+
+Required fields
+funeralUniqueCode (string) – identifies which funeral the donation is for.
+guestId (string) – the guest who is donating.
+donationAmount (number) – amount to be charged.
+
+Example request body (current sample):
+
+
+
+Successful Response (200)
+On success, the API initializes the donation and returns a checkout URL for payment.
+Example 200 response:
+
+
+JSON
+
+{
+  "funeralUniqueCode": "DE2022",
+  "guestId": "69764a754c55dc7bd8cda7d4",
+  "donationAmount": 2
+}
+
+
+Response fields
+success (boolean) – true if initialization succeeded.
+message (string) – human-readable status message.
+reference (string) – unique payment/donation reference.
+url (string) – Paystack checkout URL; redirect the user here to complete payment.
+
+Error Response – Donations Not Allowed (404)
+If the funeral/event does not accept donations, the API returns a 404 Not Found response indicating that donations are not allowed for the specified funeralUniqueCode.
+Status: 404 Not Found
+Example response:
+
+
+JSON
+
+{
+  "success": false,
+  "message": "This event does not accept donations",
+  "donationAllowed": false
+}
+
+
+
+
 
 
 

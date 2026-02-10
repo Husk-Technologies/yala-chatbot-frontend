@@ -447,18 +447,12 @@ def handle_incoming_message(
                 if not session.event_id:
                     return OutgoingMessage(text="Missing event context. Please type 'restart'.")
 
-                intent = backend.create_donation_intent(session.event_id, session.guest_name)
-                if intent.status == "ready" and intent.intent:
-                    return OutgoingMessage(text=intent.intent.instructions + _menu_hint())
-
-                if intent.status == "unavailable" and intent.intent:
-                    return OutgoingMessage(text=intent.intent.instructions + _menu_hint())
-
+                session.state = ConversationState.WAIT_DONATION_AMOUNT.value
+                store.upsert(sender_key, session)
                 return OutgoingMessage(
                     text=(
-                        "We couldn’t complete the donation right now.\n"
-                        "Please try again later."
-                        + _menu_hint()
+                        "Please enter the amount you would like to donate (e.g., 50).\n"
+                        "(Reply *back* to return to the menu.)"
                     )
                 )
 
@@ -511,6 +505,86 @@ def handle_incoming_message(
             text=(
                 "Please reply with *1*, *2*, *3*, or *4* (or type *brochure*, *donate*, *message*, *location*)."
                 + _menu_hint()
+            )
+        )
+
+    if session.state == ConversationState.WAIT_DONATION_AMOUNT.value:
+        if not session.guest_name or not session.event_id:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
+
+        if not session.guest_id:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=(
+                    "We couldn’t identify your guest profile.\n"
+                    "Please type *restart* and try again."
+                    + _menu_hint()
+                )
+            )
+
+        if choice == "back" or choice == "menu":
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text=_menu_text(session.guest_name))
+
+        # Parse amount
+        try:
+            # Simple sanitization
+            normalized_amount = text.lower().replace("ghc", "").replace("ghs", "").replace("cedis", "").replace("$", "").replace(",", "").strip()
+            amount = float(normalized_amount)
+        except ValueError:
+            return OutgoingMessage(text="Please enter a valid number for the amount (e.g., 50).")
+
+        if amount <= 0:
+            return OutgoingMessage(text="Please enter a valid amount greater than zero.")
+
+        intent = backend.create_donation_intent(
+            session.event_id,
+            session.guest_id,
+            amount,
+            token=session.backend_token,
+        )
+
+        if intent.status == "error" and _looks_like_auth_error(intent.error):
+            if _refresh_guest_auth_if_possible(
+                backend=backend,
+                sender_key=sender_key,
+                session=session,
+                phone_number=phone_number,
+                store=store,
+            ):
+                intent = backend.create_donation_intent(
+                    session.event_id,
+                    session.guest_id,
+                    amount,
+                    token=session.backend_token,
+                )
+
+        if intent.status == "unavailable":
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="This event does not accept donations." + _menu_hint())
+
+        if intent.status == "ready" and intent.intent:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=(
+                    f"Thank you. Please use this link to complete your donation of {amount}:\n"
+                    f"{intent.intent.checkout_url}"
+                    + _menu_hint()
+                )
+            )
+
+        error_msg = intent.error or "Unknown error"
+        return OutgoingMessage(
+            text=(
+                f"Sorry, we couldn’t process your donation request.\n"
+                f"({error_msg})\n"
+                "Please try again or reply *back*."
             )
         )
 
