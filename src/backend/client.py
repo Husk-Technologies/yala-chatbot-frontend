@@ -46,7 +46,7 @@ class DonationIntentResult:
 
 @dataclass(frozen=True)
 class SubmitResult:
-    status: str  # "ok" | "error"
+    status: str  # "ok" | "unavailable" | "error"
     id: str | None = None
     error: str | None = None
 

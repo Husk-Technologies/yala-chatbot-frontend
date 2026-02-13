@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 from ..backend.client import BackendClient
 from ..config import Settings
@@ -101,6 +102,27 @@ def _menu_hint() -> str:
 
 def _normalize_event_code(code: str) -> str:
     return (code or "").strip().upper()
+
+
+def _format_location_time(raw_time: str | None) -> str | None:
+    value = (raw_time or "").strip()
+    if not value:
+        return None
+
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc)
+        date_part = dt.strftime("%a, %d %b %Y")
+        time_part = dt.strftime("%I:%M %p").lstrip("0")
+        return f"{date_part} at {time_part} UTC"
+
+    date_part = dt.strftime("%a, %d %b %Y")
+    time_part = dt.strftime("%I:%M %p").lstrip("0")
+    return f"{date_part} at {time_part}"
 
 
 def _event_display_name(settings: Settings, unique_code: str) -> str:
@@ -490,11 +512,11 @@ def handle_incoming_message(
                     if loc.location.name:
                         lines.append(f"📍 {loc.location.name}")
                     if loc.location.day:
-                        lines.append(f"Day: {loc.location.day}")
+                        lines.append(f"🗓️ Day: {loc.location.day}")
                     if loc.location.time:
-                        lines.append(f"Time: {loc.location.time}")
+                        lines.append(f"🕒 Time: {_format_location_time(loc.location.time)}")
                     if loc.location.link:
-                        lines.append(f"Map: {loc.location.link}")
+                        lines.append(f"🗺️ Map: {loc.location.link}")
                 else:
                     error = loc.error or "Location details are not available yet."
                     lines = [f"Sorry, {error}"]
@@ -529,6 +551,17 @@ def handle_incoming_message(
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return OutgoingMessage(text=_menu_text(session.guest_name))
+
+        if choice in {"brochure", "donate", "condolence", "location"}:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return handle_incoming_message(
+                sender_key=sender_key,
+                incoming_text=choice,
+                store=store,
+                backend=backend,
+                settings=settings,
+            )
 
         # Parse amount
         try:
@@ -610,6 +643,17 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text=_menu_text(session.guest_name))
 
+        if choice in {"brochure", "donate", "condolence", "location"}:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return handle_incoming_message(
+                sender_key=sender_key,
+                incoming_text=choice,
+                store=store,
+                backend=backend,
+                settings=settings,
+            )
+
         if not text:
             return OutgoingMessage(text="Please type the message you would like to send to the family.")
 
@@ -646,6 +690,9 @@ def handle_incoming_message(
                     + _menu_hint()
                 )
             )
+
+        if result.status == "unavailable":
+            return OutgoingMessage(text=(result.error or "Condolence messages are disabled for this funeral.") + _menu_hint())
 
         return OutgoingMessage(
             text=(

@@ -196,8 +196,9 @@ class HttpBackendClient(BackendClient):
                 unique_code = str(
                     (data.get("uniqueCode") if isinstance(data, dict) else "") or normalized
                 ).strip() or normalized
-                display_name = self._default_event_name
-                if unique_code and unique_code.lower() not in display_name.lower():
+                description = str(data.get("description") or "").strip() if isinstance(data, dict) else ""
+                display_name = description or self._default_event_name
+                if not description and unique_code and unique_code.lower() not in display_name.lower():
                     display_name = f"{display_name} ({unique_code})"
                 return EventLookupResult(
                     status="found",
@@ -218,8 +219,9 @@ class HttpBackendClient(BackendClient):
             return EventLookupResult(status="not_found")
 
         unique_code = str(data.get("uniqueCode") or normalized).strip() or normalized
-        display_name = self._default_event_name
-        if unique_code and unique_code.lower() not in display_name.lower():
+        description = str(data.get("description") or "").strip()
+        display_name = description or self._default_event_name
+        if not description and unique_code and unique_code.lower() not in display_name.lower():
             display_name = f"{display_name} ({unique_code})"
 
         return EventLookupResult(
@@ -317,12 +319,21 @@ class HttpBackendClient(BackendClient):
         if error:
             return SubmitResult(status="error", error=error)
 
+        if isinstance(data, dict) and data.get("success") is False:
+            message = str(data.get("message") or data.get("error") or "").strip()
+            return SubmitResult(
+                status="unavailable",
+                error=message or "Condolence messages are disabled for this funeral.",
+            )
+
+        if not isinstance(data, dict):
+            return SubmitResult(status="error", error="Invalid backend response")
+
         # backend returns 201 on success (but any 2xx is handled above)
         condolence_id = None
-        if isinstance(data, dict):
-            condolence = data.get("condolence")
-            if isinstance(condolence, dict):
-                condolence_id = condolence.get("_id")
+        condolence = data.get("condolence")
+        if isinstance(condolence, dict):
+            condolence_id = condolence.get("_id")
         return SubmitResult(status="ok", id=str(condolence_id) if condolence_id else None)
 
     def create_donation_intent(

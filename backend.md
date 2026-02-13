@@ -132,13 +132,15 @@ A 200 OK response with a body like:
 JSON
 
 {
-  "success": true,
-  "message": "Funeral details verified successfully",
-  "uniqueCode": "*DE2021*",
-  "guest": [
-    "DE2022",
-    "DE2021"
-  ]
+    "success": true,
+    "message": "Funeral details verified successfully",
+    "description": "Kukua Funeral",
+    "uniqueCode": "DE2021",
+    "guest": [
+        "DE2345",
+        "DE2022",
+        "DE2021"
+    ]
 }
 
 indicates that:
@@ -291,6 +293,13 @@ JSON
 success – Indicates the operation was successful.
 message – Human‑readable status message.
 condolence – The created condolence record.
+
+When the event is not accepting condolence messages this is how the final output will be:
+
+{
+    "success": false,
+    "message": "Condolence messages are disabled for this funeral."
+}
 
 Possible error cases
 Exact error formats may vary, but typical reasons for failure include:

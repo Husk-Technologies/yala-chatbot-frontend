@@ -125,3 +125,18 @@ Optional local debug endpoints (disabled by default):
 - BACKEND_BASE_URL (Yala API base url, e.g. https://api.example.com/)
 - BACKEND_TIMEOUT_SECONDS (optional, default 15)
 - BACKEND_AUTH_BEARER_TOKEN (optional, if backend requires auth)
+
+## Backend behavior updates
+
+- Event verification (`GET verify-funeral-details/:uniqueCode`):
+   - If the API returns `description`, the bot uses it as the event/funeral display name in the conversation flow.
+   - If `description` is missing, the bot falls back to the configured default event name behavior.
+
+- Condolence submission (`POST condolence-submit`):
+   - If the API returns `success: false` with a message like `Condolence messages are disabled for this funeral.`, the bot now shows that backend message to the user.
+   - Other failures continue to use the generic fallback error response.
+
+## Conversation behavior notes
+
+- Interactive menu taps always take priority over pending text-entry prompts.
+   - Example: if a user is in `Send condolence` or `Donation amount` input mode and taps `Location` from the interactive menu, the bot treats that as a menu navigation action (not as free-text input to submit).
