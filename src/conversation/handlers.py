@@ -15,6 +15,9 @@ class OutgoingMessage:
     media_url: str | None = None
     interactive_menu: bool = False
     guest_name: str | None = None
+    interactive_button_text: str | None = None
+    interactive_section_title: str | None = None
+    interactive_rows: list[dict[str, str]] | None = None
 
 
 WELCOME_TEXT = (
@@ -133,6 +136,11 @@ def _resolve_condolence_template(text: str) -> str | None:
     if t in {"1", "2", "3", "4"}:
         return CONDOLENCE_TEMPLATES[int(t) - 1]
 
+    if t.startswith("condolence_option:"):
+        raw_idx = t.split(":", 1)[1].strip()
+        if raw_idx in {"1", "2", "3", "4"}:
+            return CONDOLENCE_TEMPLATES[int(raw_idx) - 1]
+
     lowered = t.lower()
     aliases: dict[str, int] = {
         "option 1": 0,
@@ -152,6 +160,19 @@ def _resolve_condolence_template(text: str) -> str | None:
 
 def _normalize_event_code(code: str) -> str:
     return (code or "").strip().upper()
+
+
+def _condolence_template_rows() -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for idx, template in enumerate(CONDOLENCE_TEMPLATES, start=1):
+        rows.append(
+            {
+                "id": f"condolence_option:{idx}",
+                "title": f"Message {idx}",
+                "description": template,
+            }
+        )
+    return rows
 
 
 def _format_location_time(raw_time: str | None) -> str | None:
@@ -547,7 +568,13 @@ def handle_incoming_message(
             if choice == "condolence":
                 session.state = ConversationState.WAIT_CONDOLENCE.value
                 store.upsert(sender_key, session)
-                return OutgoingMessage(text=_condolence_templates_text())
+                return OutgoingMessage(
+                    text=_condolence_templates_text(),
+                    interactive_menu=True,
+                    interactive_button_text="Choose message",
+                    interactive_section_title="Condolence Options",
+                    interactive_rows=_condolence_template_rows(),
+                )
 
             if choice == "location":
                 if not session.event_id:
@@ -705,12 +732,20 @@ def handle_incoming_message(
             return OutgoingMessage(text=_menu_text(session.guest_name))
 
         if normalize_text(text).lower() in {"options", "list", "templates"}:
-            return OutgoingMessage(text=_condolence_templates_text())
+            return OutgoingMessage(
+                text=_condolence_templates_text(),
+                interactive_menu=True,
+                interactive_button_text="Choose message",
+                interactive_section_title="Condolence Options",
+                interactive_rows=_condolence_template_rows(),
+            )
 
         selected_template = _resolve_condolence_template(text)
         message_to_send = selected_template if selected_template else text
 
-        if choice in {"brochure", "donate", "condolence", "location"}:
+        # Keep menu shortcuts available in this state, but do not let global
+        # numeric mapping (1-4) hijack condolence template choices.
+        if not selected_template and choice in {"brochure", "donate", "condolence", "location"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return handle_incoming_message(
@@ -722,7 +757,13 @@ def handle_incoming_message(
             )
 
         if not message_to_send:
-            return OutgoingMessage(text=_condolence_templates_text())
+            return OutgoingMessage(
+                text=_condolence_templates_text(),
+                interactive_menu=True,
+                interactive_button_text="Choose message",
+                interactive_section_title="Condolence Options",
+                interactive_rows=_condolence_template_rows(),
+            )
 
         result = backend.submit_condolence(
             session.event_id,
@@ -742,7 +783,7 @@ def handle_incoming_message(
                 result = backend.submit_condolence(
                     session.event_id,
                     session.guest_id,
-                    text,
+                    message_to_send,
                     token=session.backend_token,
                 )
 

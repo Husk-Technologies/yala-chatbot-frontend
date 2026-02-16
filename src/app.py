@@ -317,32 +317,45 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
             session = SESSION_STORE.get(from_wa)
             guest_name = (session.guest_name if session and session.guest_name else outgoing.guest_name)
 
-            # If we're on Meta and this is the main menu screen, prefer sending an interactive list.
-            # The row IDs are designed to flow through the existing `_normalize_choice` logic.
+            # Strip any accidental trailing menu text from handler output.
+            main_text, had_menu_footer = _strip_menu_footer(outgoing.text, guest_name)
+
+            # If we're on Meta and this is an interactive screen, prefer sending an interactive list.
             if outgoing.interactive_menu and not outgoing.media_url:
-                menu_body = (
-                    f"Thank you, {guest_name}.\nHow can we help you today?"
-                    if guest_name
-                    else "How can we help you today?"
-                )
-                ok = META.send_list_menu(
-                    to=from_wa,
-                    body=menu_body,
-                    button_text="Choose an option",
-                    section_title="Yala Menu",
-                    rows=[
+                rows = outgoing.interactive_rows
+                button_text = outgoing.interactive_button_text or "Choose an option"
+                section_title = outgoing.interactive_section_title or "Yala Menu"
+
+                if rows:
+                    body = main_text or "Please choose an option."
+                else:
+                    rows = [
                         {"id": "brochure", "title": "Download brochure", "description": "Get the event PDF"},
                         {"id": "donate", "title": "Give / Donate", "description": "Support the family"},
                         {"id": "condolence", "title": "Send condolence", "description": "Send a message"},
                         {"id": "location", "title": "Location", "description": "View venue details"},
-                    ],
+                    ]
+                    section_title = outgoing.interactive_section_title or "Yala Menu"
+                    menu_prompt = (
+                        f"Thank you, {guest_name}.\nHow can we help you today?"
+                        if guest_name
+                        else "How can we help you today?"
+                    )
+                    if had_menu_footer and main_text:
+                        body = f"{main_text}\n\n{menu_prompt}"
+                    else:
+                        body = menu_prompt
+
+                ok = META.send_list_menu(
+                    to=from_wa,
+                    body=body,
+                    button_text=button_text,
+                    section_title=section_title,
+                    rows=rows,
                 )
                 if ok:
                     return
                 # If interactive send fails, fall back to plain text.
-
-            # Strip any accidental trailing menu text from handler output.
-            main_text, _ = _strip_menu_footer(outgoing.text, guest_name)
 
             # Send brochure as document when a media URL is present; otherwise send text.
             if outgoing.media_url:
