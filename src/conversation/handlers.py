@@ -254,6 +254,44 @@ def _refresh_guest_auth_if_possible(
     return True
 
 
+def _populate_event_details_for_code(
+    *,
+    code_input: str,
+    session: Session,
+    settings: Settings,
+    backend: BackendClient,
+    sender_key: str,
+    phone_number: str,
+    store: SessionStore,
+) -> None:
+    code = _normalize_event_code(code_input)
+    session.event_code = code
+    session.event_id = code
+    session.event_name = _event_display_name(settings, code)
+    session.event_location = settings.default_event_location
+    session.event_location_url = settings.default_event_location_url
+
+    if not session.backend_token:
+        return
+
+    result = backend.get_event_by_code(code, token=session.backend_token)
+    if result.status == "error" and _looks_like_auth_error(result.error):
+        if _refresh_guest_auth_if_possible(
+            backend=backend,
+            sender_key=sender_key,
+            session=session,
+            phone_number=phone_number,
+            store=store,
+        ):
+            result = backend.get_event_by_code(code, token=session.backend_token)
+
+    if result.status == "found" and result.event:
+        session.event_id = result.event.event_id
+        session.event_name = result.event.name
+        session.event_location = result.event.location
+        session.event_location_url = result.event.location_url
+
+
 def handle_incoming_message(
     *,
     sender_key: str,
@@ -331,12 +369,15 @@ def handle_incoming_message(
         # Optimization: if the guest profile already lists this event code, do not call
         # verify-funeral-details again (backend may be non-idempotent).
         if _guest_has_event_code(session, text):
-            code = _normalize_event_code(text)
-            session.event_code = code
-            session.event_id = code
-            session.event_name = _event_display_name(settings, code)
-            session.event_location = settings.default_event_location
-            session.event_location_url = settings.default_event_location_url
+            _populate_event_details_for_code(
+                code_input=text,
+                session=session,
+                settings=settings,
+                backend=backend,
+                sender_key=sender_key,
+                phone_number=phone_number,
+                store=store,
+            )
 
             if session.guest_name:
                 session.state = ConversationState.MENU.value
@@ -440,11 +481,15 @@ def handle_incoming_message(
 
         # If the guest profile already includes the code, skip verifying (backend may reject repeats).
         if session.backend_token and _guest_has_event_code(session, session.event_code):
-            code = _normalize_event_code(session.event_code)
-            session.event_id = code
-            session.event_name = _event_display_name(settings, code)
-            session.event_location = settings.default_event_location
-            session.event_location_url = settings.default_event_location_url
+            _populate_event_details_for_code(
+                code_input=session.event_code,
+                session=session,
+                settings=settings,
+                backend=backend,
+                sender_key=sender_key,
+                phone_number=phone_number,
+                store=store,
+            )
 
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
