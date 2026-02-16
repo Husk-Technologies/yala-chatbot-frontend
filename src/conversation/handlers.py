@@ -28,10 +28,10 @@ WELCOME_TEXT = (
 
 
 CONDOLENCE_TEMPLATES: list[str] = [
-    "Please accept my deepest condolences. May your family find strength and comfort.",
-    "I am so sorry for your loss. My thoughts and prayers are with you and your family.",
-    "With heartfelt sympathy, I pray for peace and comfort for your family during this difficult time.",
-    "May the soul of your loved one rest in perfect peace. Sending love and support to your family.",
+    "My deepest condolences. May your family find strength.",
+    "So sorry for your loss. Thoughts and prayers with you.",
+    "Heartfelt sympathy. Praying for peace and comfort.",
+    "May your loved one rest in peace. Sending love.",
 ]
 
 
@@ -119,11 +119,10 @@ def _event_intro_text(event_name: str | None) -> str:
 
 
 def _condolence_templates_text() -> str:
-    lines = ["You can choose a condolence message option or type your own:"]
+    lines = ["Choose a condolence message or type your own:"]
     for idx, template in enumerate(CONDOLENCE_TEMPLATES, start=1):
         lines.append(f"{idx}. {template}")
-    lines.append("\nReply with *1*, *2*, *3*, or *4* to select a message.")
-    lines.append("Or type your own condolence message.")
+    lines.append("\nOr type your own message.")
     lines.append("(Reply *back* to return to the menu.)")
     return "\n".join(lines)
 
@@ -165,11 +164,13 @@ def _normalize_event_code(code: str) -> str:
 def _condolence_template_rows() -> list[dict[str, str]]:
     rows: list[dict[str, str]] = []
     for idx, template in enumerate(CONDOLENCE_TEMPLATES, start=1):
+        # WhatsApp interactive list row descriptions are limited to 72 chars.
+        desc = template if len(template) <= 72 else template[:69] + "..."
         rows.append(
             {
                 "id": f"condolence_option:{idx}",
                 "title": f"Message {idx}",
-                "description": template,
+                "description": desc,
             }
         )
     return rows
