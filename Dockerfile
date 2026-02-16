@@ -16,7 +16,6 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 
 # Copy application code
 COPY src /app/src
-COPY scripts /app/scripts
 COPY README.md /app/README.md
 COPY backend.md /app/backend.md
 
