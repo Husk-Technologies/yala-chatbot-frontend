@@ -24,6 +24,14 @@ WELCOME_TEXT = (
 )
 
 
+CONDOLENCE_TEMPLATES: list[str] = [
+    "Please accept my deepest condolences. May your family find strength and comfort.",
+    "I am so sorry for your loss. My thoughts and prayers are with you and your family.",
+    "With heartfelt sympathy, I pray for peace and comfort for your family during this difficult time.",
+    "May the soul of your loved one rest in perfect peace. Sending love and support to your family.",
+]
+
+
 def _is_greeting(text: str) -> bool:
     t = normalize_text(text).lower()
     return t in {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
@@ -98,6 +106,48 @@ def _menu_text(guest_name: str) -> str:
 
 def _menu_hint() -> str:
     return "\n\nReply *0* (or type *menu*) to see options."
+
+
+def _event_intro_text(event_name: str | None) -> str:
+    name = normalize_text(event_name or "")
+    if not name:
+        name = "this event"
+    return f"This is the funeral/event of *{name}*."
+
+
+def _condolence_templates_text() -> str:
+    lines = ["You can choose a condolence message option or type your own:"]
+    for idx, template in enumerate(CONDOLENCE_TEMPLATES, start=1):
+        lines.append(f"{idx}. {template}")
+    lines.append("\nReply with *1*, *2*, *3*, or *4* to select a message.")
+    lines.append("Or type your own condolence message.")
+    lines.append("(Reply *back* to return to the menu.)")
+    return "\n".join(lines)
+
+
+def _resolve_condolence_template(text: str) -> str | None:
+    t = normalize_text(text)
+    if not t:
+        return None
+
+    if t in {"1", "2", "3", "4"}:
+        return CONDOLENCE_TEMPLATES[int(t) - 1]
+
+    lowered = t.lower()
+    aliases: dict[str, int] = {
+        "option 1": 0,
+        "option 2": 1,
+        "option 3": 2,
+        "option 4": 3,
+        "message 1": 0,
+        "message 2": 1,
+        "message 3": 2,
+        "message 4": 3,
+    }
+    idx = aliases.get(lowered)
+    if idx is None:
+        return None
+    return CONDOLENCE_TEMPLATES[idx]
 
 
 def _normalize_event_code(code: str) -> str:
@@ -271,7 +321,11 @@ def handle_incoming_message(
                 session.state = ConversationState.MENU.value
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
-                    text=_menu_text(session.guest_name),
+                    text=(
+                        _event_intro_text(session.event_name)
+                        + "\n\n"
+                        + _menu_text(session.guest_name)
+                    ),
                     interactive_menu=True,
                     guest_name=session.guest_name,
                 )
@@ -322,7 +376,11 @@ def handle_incoming_message(
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return OutgoingMessage(
-                text=_menu_text(session.guest_name),
+                text=(
+                    _event_intro_text(session.event_name)
+                    + "\n\n"
+                    + _menu_text(session.guest_name)
+                ),
                 interactive_menu=True,
                 guest_name=session.guest_name,
             )
@@ -370,7 +428,11 @@ def handle_incoming_message(
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return OutgoingMessage(
-                text=_menu_text(session.guest_name),
+                text=(
+                    _event_intro_text(session.event_name)
+                    + "\n\n"
+                    + _menu_text(session.guest_name)
+                ),
                 interactive_menu=True,
                 guest_name=session.guest_name,
             )
@@ -401,7 +463,11 @@ def handle_incoming_message(
                 session.state = ConversationState.MENU.value
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
-                    text=_menu_text(session.guest_name),
+                    text=(
+                        _event_intro_text(session.event_name)
+                        + "\n\n"
+                        + _menu_text(session.guest_name)
+                    ),
                     interactive_menu=True,
                     guest_name=session.guest_name,
                 )
@@ -481,12 +547,7 @@ def handle_incoming_message(
             if choice == "condolence":
                 session.state = ConversationState.WAIT_CONDOLENCE.value
                 store.upsert(sender_key, session)
-                return OutgoingMessage(
-                    text=(
-                        "Please type the message you would like to send to the family.\n"
-                        "(Reply *back* to return to the menu.)"
-                    )
-                )
+                return OutgoingMessage(text=_condolence_templates_text())
 
             if choice == "location":
                 if not session.event_id:
@@ -643,6 +704,12 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text=_menu_text(session.guest_name))
 
+        if normalize_text(text).lower() in {"options", "list", "templates"}:
+            return OutgoingMessage(text=_condolence_templates_text())
+
+        selected_template = _resolve_condolence_template(text)
+        message_to_send = selected_template if selected_template else text
+
         if choice in {"brochure", "donate", "condolence", "location"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
@@ -654,13 +721,13 @@ def handle_incoming_message(
                 settings=settings,
             )
 
-        if not text:
-            return OutgoingMessage(text="Please type the message you would like to send to the family.")
+        if not message_to_send:
+            return OutgoingMessage(text=_condolence_templates_text())
 
         result = backend.submit_condolence(
             session.event_id,
             session.guest_id,
-            text,
+            message_to_send,
             token=session.backend_token,
         )
 
