@@ -69,6 +69,7 @@ class RedisSessionStore:
                 guest_id=data.get("guest_id"),
                 backend_token=data.get("backend_token"),
                 funeral_unique_codes=data.get("funeral_unique_codes"),
+                event_descriptions=data.get("event_descriptions"),
                 updated_at=float(data.get("updated_at") or 0.0),
             )
         except Exception:  # noqa: BLE001

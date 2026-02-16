@@ -254,6 +254,23 @@ def _refresh_guest_auth_if_possible(
     return True
 
 
+def _cache_event_description(session: Session, code: str, name: str) -> None:
+    """Store event description keyed by normalized code so it survives repeat lookups."""
+    norm = _normalize_event_code(code)
+    if not norm or not name:
+        return
+    if session.event_descriptions is None:
+        session.event_descriptions = {}
+    session.event_descriptions[norm] = name
+
+
+def _cached_event_description(session: Session, code: str) -> str | None:
+    norm = _normalize_event_code(code)
+    if not norm or not session.event_descriptions:
+        return None
+    return session.event_descriptions.get(norm)
+
+
 def _populate_event_details_for_code(
     *,
     code_input: str,
@@ -267,7 +284,10 @@ def _populate_event_details_for_code(
     code = _normalize_event_code(code_input)
     session.event_code = code
     session.event_id = code
-    session.event_name = _event_display_name(settings, code)
+
+    # Start with the best name we already have (cached > default).
+    cached = _cached_event_description(session, code)
+    session.event_name = cached or _event_display_name(settings, code)
     session.event_location = settings.default_event_location
     session.event_location_url = settings.default_event_location_url
 
@@ -290,6 +310,7 @@ def _populate_event_details_for_code(
         session.event_name = result.event.name
         session.event_location = result.event.location
         session.event_location_url = result.event.location_url
+        _cache_event_description(session, code, result.event.name)
 
 
 def handle_incoming_message(
@@ -322,8 +343,11 @@ def handle_incoming_message(
 
     # Global commands
     if choice == "restart":
+        # Preserve the event description cache so we don't lose it.
+        saved_descriptions = session.event_descriptions
         store.clear(sender_key)
         session = Session(state=ConversationState.WAIT_EVENT_CODE.value, phone_number=phone_number or None)
+        session.event_descriptions = saved_descriptions
 
         if phone_number:
             guest = backend.check_guest_registration(phone_number)
@@ -427,6 +451,7 @@ def handle_incoming_message(
         session.event_name = result.event.name
         session.event_location = result.event.location
         session.event_location_url = result.event.location_url
+        _cache_event_description(session, code, result.event.name)
 
         # Cache the verified code into the guest's known codes so we can skip re-verification.
         existing = session.funeral_unique_codes or []
@@ -520,6 +545,7 @@ def handle_incoming_message(
                 session.event_name = result.event.name
                 session.event_location = result.event.location
                 session.event_location_url = result.event.location_url
+                _cache_event_description(session, session.event_code, result.event.name)
 
                 code = _normalize_event_code(session.event_code)
                 existing = session.funeral_unique_codes or []

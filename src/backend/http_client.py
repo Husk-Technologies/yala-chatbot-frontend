@@ -191,8 +191,22 @@ class HttpBackendClient(BackendClient):
             msg = ""
             if isinstance(data, dict):
                 msg = str(data.get("message") or data.get("error") or "")
-            msg = (msg or error or "").lower()
-            if "already verified" in msg:
+            msg_lower = (msg or error or "").lower()
+
+            # Broad match: the backend may phrase the repeat-verification error
+            # in many ways ("already verified", "already associated",
+            # "previously verified", "code already", etc.).
+            _repeat_keywords = ("already", "verified", "associated", "previously", "exists")
+            is_repeat = any(kw in msg_lower for kw in _repeat_keywords)
+
+            # Even if not a known repeat keyword, if the error response still
+            # contains a uniqueCode or description, the event clearly exists.
+            has_event_data = (
+                isinstance(data, dict)
+                and (data.get("uniqueCode") or data.get("description"))
+            )
+
+            if is_repeat or has_event_data:
                 unique_code = str(
                     (data.get("uniqueCode") if isinstance(data, dict) else "") or normalized
                 ).strip() or normalized
@@ -200,6 +214,10 @@ class HttpBackendClient(BackendClient):
                 display_name = description or self._default_event_name
                 if not description and unique_code and unique_code.lower() not in display_name.lower():
                     display_name = f"{display_name} ({unique_code})"
+                logger.info(
+                    "verify-funeral-details/%s returned repeat/known error (%s); description=%r",
+                    normalized, msg_lower[:80], description,
+                )
                 return EventLookupResult(
                     status="found",
                     event=Event(
