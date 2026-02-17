@@ -58,6 +58,7 @@ def _normalize_choice(text: str) -> str:
 
     aliases: dict[str, str] = {
         "0": "menu",
+        "o": "menu",
         "menu": "menu",
         "main menu": "menu",
         "home": "menu",
@@ -118,13 +119,11 @@ def _event_intro_text(event_name: str | None) -> str:
     return f"This is the funeral/event of *{name}*."
 
 
-def _condolence_templates_text() -> str:
-    lines = ["Choose a condolence message or type your own:"]
-    for idx, template in enumerate(CONDOLENCE_TEMPLATES, start=1):
-        lines.append(f"{idx}. {template}")
-    lines.append("\nOr type your own message.")
-    lines.append("(Reply *back* to return to the menu.)")
-    return "\n".join(lines)
+def _condolence_prompt_text() -> str:
+    return (
+        "Please select a message from the list or type your own condolence message.\n"
+        "(Reply *0* or *back* to return to the menu.)"
+    )
 
 
 def _resolve_condolence_template(text: str) -> str | None:
@@ -641,7 +640,7 @@ def handle_incoming_message(
                 session.state = ConversationState.WAIT_CONDOLENCE.value
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
-                    text=_condolence_templates_text(),
+                    text=_condolence_prompt_text(),
                     interactive_menu=True,
                     interactive_button_text="Choose message",
                     interactive_section_title="Condolence Options",
@@ -683,11 +682,11 @@ def handle_incoming_message(
 
                 return OutgoingMessage(text="\n".join(lines) + _menu_hint())
 
+        # Unrecognized input (including greetings like "hi") — just show the menu.
         return OutgoingMessage(
-            text=(
-                "Please reply with *1*, *2*, *3*, or *4* (or type *brochure*, *donate*, *message*, *location*)."
-                + _menu_hint()
-            )
+            text=_menu_text(session.guest_name),
+            interactive_menu=True,
+            guest_name=session.guest_name,
         )
 
     if session.state == ConversationState.WAIT_DONATION_AMOUNT.value:
@@ -798,14 +797,18 @@ def handle_incoming_message(
                 )
             )
 
-        if choice == "back" or choice == "menu":
+        if choice in {"back", "menu"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
-            return OutgoingMessage(text=_menu_text(session.guest_name))
+            return OutgoingMessage(
+                text=_menu_text(session.guest_name),
+                interactive_menu=True,
+                guest_name=session.guest_name,
+            )
 
         if normalize_text(text).lower() in {"options", "list", "templates"}:
             return OutgoingMessage(
-                text=_condolence_templates_text(),
+                text=_condolence_prompt_text(),
                 interactive_menu=True,
                 interactive_button_text="Choose message",
                 interactive_section_title="Condolence Options",
@@ -830,7 +833,7 @@ def handle_incoming_message(
 
         if not message_to_send:
             return OutgoingMessage(
-                text=_condolence_templates_text(),
+                text=_condolence_prompt_text(),
                 interactive_menu=True,
                 interactive_button_text="Choose message",
                 interactive_section_title="Condolence Options",

@@ -233,7 +233,31 @@ class HttpBackendClient(BackendClient):
                 return EventLookupResult(status="not_found")
             return EventLookupResult(status="error", error=error)
 
-        if not isinstance(data, dict) or data.get("success") is not True:
+        if not isinstance(data, dict):
+            return EventLookupResult(status="not_found")
+
+        # The backend may return 200 with success=false on repeat verification
+        # but still include the description field.  Extract it when available.
+        if data.get("success") is not True:
+            desc = str(data.get("description") or "").strip()
+            uc = str(data.get("uniqueCode") or normalized).strip() or normalized
+            if desc or data.get("uniqueCode"):
+                display = desc or self._default_event_name
+                if not desc and uc and uc.lower() not in display.lower():
+                    display = f"{display} ({uc})"
+                logger.info(
+                    "verify-funeral-details/%s returned 200 success=false with description=%r",
+                    normalized, desc,
+                )
+                return EventLookupResult(
+                    status="found",
+                    event=Event(
+                        event_id=uc,
+                        name=display,
+                        location=self._default_event_location,
+                        location_url=self._default_event_location_url,
+                    ),
+                )
             return EventLookupResult(status="not_found")
 
         unique_code = str(data.get("uniqueCode") or normalized).strip() or normalized
