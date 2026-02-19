@@ -16,6 +16,29 @@ load_dotenv(find_dotenv())
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+import sentry_sdk
+from sentry_sdk.integrations.flask import FlaskIntegration
+from sentry_sdk.integrations.logging import LoggingIntegration
+from .config import SETTINGS as _sentry_settings  # noqa: E402 (imported before app init)
+
+if _sentry_settings.sentry_dsn:
+    sentry_sdk.init(
+        dsn=_sentry_settings.sentry_dsn,
+        environment=_sentry_settings.sentry_environment,
+        traces_sample_rate=_sentry_settings.sentry_traces_sample_rate,
+        integrations=[
+            FlaskIntegration(),
+            LoggingIntegration(
+                level=logging.WARNING,       # breadcrumb level
+                event_level=logging.ERROR,   # send as event
+            ),
+        ],
+        send_default_pii=False,
+    )
+    logger.info("Sentry error tracking enabled (environment=%s)", _sentry_settings.sentry_environment)
+else:
+    logger.info("Sentry not configured — set SENTRY_DSN to enable error tracking")
+
 app = Flask(__name__)
 
 from .backend.http_client import HttpBackendClient, HttpBackendConfig

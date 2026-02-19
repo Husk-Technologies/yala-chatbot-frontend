@@ -101,9 +101,9 @@ def _menu_text(guest_name: str) -> str:
     return (
         f"Thank you, {guest_name}.\n"
         "How can we help you today?\n\n"
-        "1. 📄 Download event brochure\n"
+        "1. 📄 Download Event Brochure\n"
         "2. 💝 Give / Donate\n"
-        "3. 🕊️ Send condolence / message\n"
+        "3. 🕊️ Send Condolence / Message\n"
         "4. 📍 Location"
     )
 
@@ -437,6 +437,14 @@ def handle_incoming_message(
             ):
                 result = backend.get_event_by_code(text, token=session.backend_token)
 
+        if result.status == "closed":
+            return OutgoingMessage(
+                text=(
+                    "Sorry, this event is closed and is no longer accepting guests.\n"
+                    "Please contact the event organiser for more information."
+                )
+            )
+
         if result.status != "found" or not result.event:
             return OutgoingMessage(
                 text=(
@@ -539,6 +547,21 @@ def handle_incoming_message(
                     store=store,
                 ):
                     result = backend.get_event_by_code(session.event_code, token=session.backend_token)
+
+            if result.status == "closed":
+                session.event_code = None
+                session.event_id = None
+                session.event_name = None
+                session.event_location = None
+                session.event_location_url = None
+                session.state = ConversationState.WAIT_EVENT_CODE.value
+                store.upsert(sender_key, session)
+                return OutgoingMessage(
+                    text=(
+                        "Sorry, this event is closed and is no longer accepting guests.\n"
+                        "Please contact the event organiser for more information."
+                    )
+                )
 
             if result.status == "found" and result.event:
                 session.event_id = result.event.event_id
@@ -763,9 +786,10 @@ def handle_incoming_message(
         if intent.status == "ready" and intent.intent:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
+            formatted_amount = f"GH¢{amount:g}"
             return OutgoingMessage(
                 text=(
-                    f"Thank you. Please use this link to complete your donation of {amount}:\n"
+                    f"Thank you. Please use this link to complete your donation of {formatted_amount}:\n"
                     f"{intent.intent.checkout_url}"
                     + _menu_hint()
                 )

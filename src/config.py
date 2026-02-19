@@ -52,5 +52,11 @@ class Settings:
         self.redis_key_prefix = os.getenv("REDIS_KEY_PREFIX", "wa_bot").strip() or "wa_bot"
         self.redis_required = _env_bool("REDIS_REQUIRED", False)
 
+        # Error tracking via Sentry.  Set SENTRY_DSN to enable.
+        # Example: https://<key>@o<org>.ingest.sentry.io/<project>
+        self.sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
+        self.sentry_environment = os.getenv("SENTRY_ENVIRONMENT", "production").strip() or "production"
+        self.sentry_traces_sample_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1") or "0.1")
+
 
 SETTINGS = Settings()

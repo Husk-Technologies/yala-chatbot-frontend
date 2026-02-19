@@ -14,7 +14,7 @@ class Event:
 
 @dataclass(frozen=True)
 class EventLookupResult:
-    status: str  # "found" | "not_found" | "error"
+    status: str  # "found" | "not_found" | "closed" | "error"
     event: Event | None = None
     error: str | None = None
 

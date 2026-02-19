@@ -182,6 +182,11 @@ class HttpBackendClient(BackendClient):
         status_code, data, error = self._get_json(f"verify-funeral-details/{normalized}", bearer_token=token)
 
         if status_code in {404}:
+            # Check whether the backend explicitly says the event is closed.
+            if isinstance(data, dict):
+                msg_404 = str(data.get("message") or data.get("error") or "").lower()
+                if "closed" in msg_404:
+                    return EventLookupResult(status="closed")
             return EventLookupResult(status="not_found")
 
         if error:

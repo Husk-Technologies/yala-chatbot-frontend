@@ -149,6 +149,14 @@ message describes the outcome of the verification.
 uniqueCode echoes the verified funeral code.
 guest is an array of related guest or funeral codes associated with this verification.
 
+A 404 error Not found error with a body like:
+{
+    "success": false,
+    "message": "Sorry this event is closed."
+}
+
+should alert users that that event has been closed
+
 # Get funeral brochure
 Endpoint Details
 Method: GET
