@@ -115,8 +115,8 @@ def _menu_hint() -> str:
 def _event_intro_text(event_name: str | None) -> str:
     name = normalize_text(event_name or "")
     if not name:
-        name = "this event"
-    return f"This is the funeral/event of *{name}*."
+        name = "This Event"
+    return f"*{name}*"
 
 
 def _condolence_prompt_text() -> str:
@@ -421,7 +421,7 @@ def handle_incoming_message(
             return OutgoingMessage(
                 text=(
                     "Thank you.\n"
-                    f"This is the funeral/event of *{session.event_name}*.\n\n"
+                    f"{_event_intro_text(session.event_name)}\n\n"
                     "Please enter your *name* to continue."
                 )
             )
@@ -486,7 +486,7 @@ def handle_incoming_message(
         return OutgoingMessage(
             text=(
                 "Thank you.\n"
-                f"This is the funeral/event of *{session.event_name}*.\n\n"
+                f"{_event_intro_text(session.event_name)}\n\n"
                 "Please enter your *name* to continue."
             )
         )

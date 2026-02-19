@@ -250,17 +250,17 @@ def _menu_footer_text(guest_name: str) -> str:
     return (
         f"Thank you, {guest_name}.\n"
         "How can we help you today?\n\n"
-        "1. 📄 Download event brochure\n"
+        "1. 📄 Download Event Brochure\n"
         "2. 💝 Give / Donate\n"
-        "3. 🕊️ Send condolence / message\n"
+        "3. 🕊️ Send Condolence / Message\n"
         "4. 📍 Location"
     )
 
 
 _MENU_MARKER = (
-    "\n1. 📄 Download event brochure\n"
+    "\n1. 📄 Download Event Brochure\n"
     "2. 💝 Give / Donate\n"
-    "3. 🕊️ Send condolence / message\n"
+    "3. 🕊️ Send Condolence / Message\n"
     "4. 📍 Location"
 )
 
@@ -353,10 +353,10 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
                     body = main_text or "Please choose an option."
                 else:
                     rows = [
-                        {"id": "brochure", "title": "Download brochure", "description": "Get the event PDF"},
-                        {"id": "donate", "title": "Give / Donate", "description": "Support the family"},
-                        {"id": "condolence", "title": "Send condolence", "description": "Send a message"},
-                        {"id": "location", "title": "Location", "description": "View venue details"},
+                        {"id": "brochure", "title": "Download Brochure", "description": "Get the Event PDF"},
+                        {"id": "donate", "title": "Give / Donate", "description": "Support the Family"},
+                        {"id": "condolence", "title": "Send Condolence", "description": "Send a Message"},
+                        {"id": "location", "title": "Location", "description": "View Venue Details"},
                     ]
                     section_title = outgoing.interactive_section_title or "Yala Menu"
                     menu_prompt = (
