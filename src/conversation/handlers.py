@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 
 from ..backend.client import BackendClient
 from ..config import Settings
@@ -186,10 +186,9 @@ def _format_location_time(raw_time: str | None) -> str | None:
         return value
 
     if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc)
         date_part = dt.strftime("%a, %d %b %Y")
         time_part = dt.strftime("%I:%M %p").lstrip("0")
-        return f"{date_part} at {time_part} UTC"
+        return f"{date_part} at {time_part}"
 
     date_part = dt.strftime("%a, %d %b %Y")
     time_part = dt.strftime("%I:%M %p").lstrip("0")
@@ -693,10 +692,13 @@ def handle_incoming_message(
                     lines: list[str] = []
                     if loc.location.name:
                         lines.append(f"📍 {loc.location.name}")
-                    if loc.location.day:
-                        lines.append(f"🗓️ Day: {loc.location.day}")
-                    if loc.location.time:
-                        lines.append(f"🕒 Time: {_format_location_time(loc.location.time)}")
+
+                    formatted_time = _format_location_time(loc.location.time)
+                    if formatted_time:
+                        lines.append(f"🗓️ Date/Time: {formatted_time}")
+                    elif loc.location.day:
+                        lines.append(f"🗓️ Date/Time: {loc.location.day}")
+
                     if loc.location.link:
                         lines.append(f"🗺️ Map: {loc.location.link}")
                 else:
