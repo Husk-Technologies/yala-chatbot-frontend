@@ -175,7 +175,7 @@ class HttpBackendClient(BackendClient):
     # --- Phase 1 bot methods (some are placeholders until backend endpoints are available) ---
 
     def get_event_by_code(self, event_code: str, token: str | None = None) -> EventLookupResult:
-        normalized = (event_code or "").strip()
+        normalized = (event_code or "").strip().upper()
         if not normalized:
             return EventLookupResult(status="not_found")
 
@@ -363,15 +363,17 @@ class HttpBackendClient(BackendClient):
             bearer_token=token,
         )
 
-        if error:
-            return SubmitResult(status="error", error=error)
-
+        # Check for success=false first (even on non-2xx responses) so that
+        # "disabled" messages are returned as unavailable, not generic errors.
         if isinstance(data, dict) and data.get("success") is False:
             message = str(data.get("message") or data.get("error") or "").strip()
             return SubmitResult(
                 status="unavailable",
                 error=message or "Condolence messages are disabled for this funeral.",
             )
+
+        if error:
+            return SubmitResult(status="error", error=error)
 
         if not isinstance(data, dict):
             return SubmitResult(status="error", error="Invalid backend response")

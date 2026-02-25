@@ -394,7 +394,7 @@ def handle_incoming_message(
         # Backend requires a guest token to verify event codes.
         # If we don't have a token yet, collect the code and ask for the guest name first.
         if not session.backend_token:
-            session.event_code = text
+            session.event_code = _normalize_event_code(text)
             session.state = ConversationState.WAIT_NAME.value
             store.upsert(sender_key, session)
             return OutgoingMessage(text="Thank you. Please enter your *name* to continue.")
