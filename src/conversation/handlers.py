@@ -92,6 +92,13 @@ def _normalize_choice(text: str) -> str:
         "address": "location",
         "where": "location",
         "map": "location",
+
+        "5": "contact",
+        "contact": "contact",
+        "contact us": "contact",
+        "support": "contact",
+        "help desk": "contact",
+        "customer care": "contact",
     }
 
     return aliases.get(t, t)
@@ -104,7 +111,8 @@ def _menu_text(guest_name: str) -> str:
         "1. 📄 Download Event Brochure\n"
         "2. 💝 Give / Donate\n"
         "3. 🕊️ Send Condolence / Message\n"
-        "4. 📍 Location"
+        "4. 📍 Location\n"
+        "5. ☎️ Contact Us"
     )
 
 
@@ -366,6 +374,8 @@ def handle_incoming_message(
             "- *1* for brochure\n"
             "- *2* to donate\n"
             "- *3* to send a message\n"
+            "- *4* for location\n"
+            "- *5* for contact us\n"
             "- *0* to show the menu\n"
             "- *restart* to start over"
         )
@@ -614,7 +624,7 @@ def handle_incoming_message(
                 guest_name=session.guest_name,
             )
 
-        if choice in {"brochure", "donate", "condolence", "location"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact"}:
             if choice == "brochure":
                 if not session.event_id:
                     return OutgoingMessage(text="Missing event context. Please type 'restart'.")
@@ -707,6 +717,17 @@ def handle_incoming_message(
 
                 return OutgoingMessage(text="\n".join(lines) + _menu_hint())
 
+            if choice == "contact":
+                return OutgoingMessage(
+                    text=(
+                        "☎️ Contact Us\n"
+                        "Phone: +233 24 991 0999\n"
+                        "Tap to Call: tel:+233249910999\n"
+                        "Website: https://dashboard.yalasolution.com/"
+                        + _menu_hint()
+                    )
+                )
+
         # Unrecognized input (including greetings like "hi") — just show the menu.
         return OutgoingMessage(
             text=_menu_text(session.guest_name),
@@ -736,7 +757,7 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text=_menu_text(session.guest_name))
 
-        if choice in {"brochure", "donate", "condolence", "location"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return handle_incoming_message(
@@ -846,7 +867,7 @@ def handle_incoming_message(
 
         # Keep menu shortcuts available in this state, but do not let global
         # numeric mapping (1-4) hijack condolence template choices.
-        if not selected_template and choice in {"brochure", "donate", "condolence", "location"}:
+        if not selected_template and choice in {"brochure", "donate", "condolence", "location", "contact"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return handle_incoming_message(
