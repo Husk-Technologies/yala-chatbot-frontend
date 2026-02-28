@@ -757,23 +757,29 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text=_menu_text(session.guest_name))
 
-        if choice in {"brochure", "donate", "condolence", "location", "contact"}:
-            session.state = ConversationState.MENU.value
-            store.upsert(sender_key, session)
-            return handle_incoming_message(
-                sender_key=sender_key,
-                incoming_text=choice,
-                store=store,
-                backend=backend,
-                settings=settings,
-            )
-
-        # Parse amount
+        # Parse amount *before* checking menu shortcuts so that numeric inputs
+        # like "2" are treated as donation amounts, not menu option numbers.
         try:
-            # Simple sanitization
-            normalized_amount = text.lower().replace("ghc", "").replace("ghs", "").replace("cedis", "").replace("$", "").replace(",", "").strip()
+            normalized_amount = text.lower().replace("ghc", "").replace("ghs", "").replace("cedis", "").replace("$", "").replace(",", "").replace("gh¢", "").strip()
             amount = float(normalized_amount)
         except ValueError:
+            amount = None
+
+        if amount is not None and amount <= 0:
+            return OutgoingMessage(text="Please enter a valid amount greater than zero.")
+
+        # If the input isn't a valid number, allow menu shortcuts to work.
+        if amount is None:
+            if choice in {"brochure", "donate", "condolence", "location", "contact"}:
+                session.state = ConversationState.MENU.value
+                store.upsert(sender_key, session)
+                return handle_incoming_message(
+                    sender_key=sender_key,
+                    incoming_text=choice,
+                    store=store,
+                    backend=backend,
+                    settings=settings,
+                )
             return OutgoingMessage(text="Please enter a valid number for the amount (e.g., 50).")
 
         if amount <= 0:
