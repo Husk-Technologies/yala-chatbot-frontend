@@ -333,6 +333,7 @@ class HttpBackendClient(BackendClient):
             return FuneralLocationResult(status="missing")
 
         location = FuneralLocation(
+            date=(data.get("date") or None),
             day=(loc.get("day") or None),
             time=(loc.get("time") or None),
             name=(loc.get("name") or None),

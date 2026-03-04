@@ -227,11 +227,12 @@ JSON
     "success": true,
     "message": "Funeral location fetched successfully",
     "location": {
+        "name": "Osu Funeral Home",
         "day": "Friday",
-        "time": "2026-01-11T20:11:51.985Z",
-        "name": "Philipo's Tilapia Joint ",
-        "link": "https://maps.app.goo.gl/i4frXrX5ZNvpcHLG6"
-    }
+        "time": "2026-05-16T10:46:00.000Z",
+        "link": "https://maps.app.goo.gl/hcQJuLjdNGbu2tWE8"
+    },
+    "date": "2026-02-20T00:00:00.000Z"
 }
 
 Response Fields

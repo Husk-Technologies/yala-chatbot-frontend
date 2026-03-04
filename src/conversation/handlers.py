@@ -193,14 +193,20 @@ def _format_location_time(raw_time: str | None) -> str | None:
     except ValueError:
         return value
 
-    if dt.tzinfo is not None:
-        date_part = dt.strftime("%a, %d %b %Y")
-        time_part = dt.strftime("%I:%M %p").lstrip("0")
-        return f"{date_part} at {time_part}"
+    return dt.strftime("%I:%M %p").lstrip("0")
 
-    date_part = dt.strftime("%a, %d %b %Y")
-    time_part = dt.strftime("%I:%M %p").lstrip("0")
-    return f"{date_part} at {time_part}"
+
+def _format_location_date(raw_date: str | None) -> str | None:
+    value = (raw_date or "").strip()
+    if not value:
+        return None
+
+    try:
+        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return value
+
+    return dt.strftime("%a, %d %b %Y")
 
 
 def _event_display_name(settings: Settings, unique_code: str) -> str:
@@ -703,11 +709,15 @@ def handle_incoming_message(
                     if loc.location.name:
                         lines.append(f"📍 {loc.location.name}")
 
+                    formatted_date = _format_location_date(loc.location.date)
+                    if formatted_date:
+                        lines.append(f"🗓️ Date: {formatted_date}")
+                    elif loc.location.day:
+                        lines.append(f"🗓️ Date: {loc.location.day}")
+
                     formatted_time = _format_location_time(loc.location.time)
                     if formatted_time:
-                        lines.append(f"🗓️ Date/Time: {formatted_time}")
-                    elif loc.location.day:
-                        lines.append(f"🗓️ Date/Time: {loc.location.day}")
+                        lines.append(f"🕒 Time: {formatted_time}")
 
                     if loc.location.link:
                         lines.append(f"🗺️ Map: {loc.location.link}")
@@ -721,8 +731,7 @@ def handle_incoming_message(
                 return OutgoingMessage(
                     text=(
                         "☎️ Contact Us\n"
-                        "Phone: +233 24 991 0999\n"
-                        "Tap to Call: tel:+233249910999\n"
+                        "Call/WhatsApp: +233 24 991 0999\n"
                         "Website: https://dashboard.yalasolution.com/"
                         + _menu_hint()
                     )

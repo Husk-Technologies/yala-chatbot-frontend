@@ -53,6 +53,7 @@ class SubmitResult:
 
 @dataclass(frozen=True)
 class FuneralLocation:
+    date: str | None = None
     day: str | None = None
     time: str | None = None
     name: str | None = None
