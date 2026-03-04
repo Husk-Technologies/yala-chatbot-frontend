@@ -342,15 +342,6 @@ def handle_incoming_message(
     if session is None:
         session = Session(state=ConversationState.WAIT_EVENT_CODE.value, phone_number=phone_number or None)
 
-        # Pre-fetch guest profile if already registered.
-        if phone_number:
-            guest = backend.check_guest_registration(phone_number)
-            if guest.status == "found" and guest.guest:
-                session.guest_id = guest.guest.guest_id
-                session.guest_name = guest.guest.full_name
-                session.backend_token = guest.token
-                session.funeral_unique_codes = guest.guest.funeral_unique_codes
-
         store.upsert(sender_key, session)
         return OutgoingMessage(text=WELCOME_TEXT)
 
@@ -361,14 +352,6 @@ def handle_incoming_message(
         store.clear(sender_key)
         session = Session(state=ConversationState.WAIT_EVENT_CODE.value, phone_number=phone_number or None)
         session.event_descriptions = saved_descriptions
-
-        if phone_number:
-            guest = backend.check_guest_registration(phone_number)
-            if guest.status == "found" and guest.guest:
-                session.guest_id = guest.guest.guest_id
-                session.guest_name = guest.guest.full_name
-                session.backend_token = guest.token
-                session.funeral_unique_codes = guest.guest.funeral_unique_codes
 
         store.upsert(sender_key, session)
         return OutgoingMessage(text=WELCOME_TEXT)

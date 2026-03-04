@@ -43,7 +43,14 @@ class HttpBackendClient(BackendClient):
         #   BACKEND_BASE_URL=https://host.tld\n/api/
         # which otherwise becomes an invalid URL.
         self._base_url = "".join((config.base_url or "").split())
-        self._timeout_seconds = max(1, int(config.timeout_seconds))
+        configured_timeout = int(config.timeout_seconds)
+        self._timeout_seconds = max(3, min(30, configured_timeout))
+        if self._timeout_seconds != configured_timeout:
+            logger.warning(
+                "BACKEND_TIMEOUT_SECONDS=%s is outside safe range; clamped to %s",
+                configured_timeout,
+                self._timeout_seconds,
+            )
         self._auth_bearer_token = (config.auth_bearer_token or "").strip()
         self._public_base_url = (config.public_base_url or "").rstrip("/")
         self._default_event_name = config.default_event_name
