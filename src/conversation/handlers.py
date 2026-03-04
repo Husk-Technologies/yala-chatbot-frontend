@@ -384,7 +384,16 @@ def handle_incoming_message(
             return OutgoingMessage(text=WELCOME_TEXT)
 
         # Backend requires a guest token to verify event codes.
-        # If we don't have a token yet, collect the code and ask for the guest name first.
+        # Try recovering guest auth first for already-registered users.
+        if not session.backend_token and phone_number:
+            guest = backend.check_guest_registration(phone_number)
+            if guest.status == "found" and guest.guest:
+                session.guest_id = guest.guest.guest_id
+                session.guest_name = session.guest_name or guest.guest.full_name
+                session.backend_token = guest.token
+                session.funeral_unique_codes = guest.guest.funeral_unique_codes
+
+        # If we still don't have a token, collect the code and ask for the guest name.
         if not session.backend_token:
             session.event_code = _normalize_event_code(text)
             session.state = ConversationState.WAIT_NAME.value
@@ -506,6 +515,15 @@ def handle_incoming_message(
                 session.guest_id = reg.guest.guest_id
                 session.backend_token = reg.token
                 session.funeral_unique_codes = reg.guest.funeral_unique_codes
+
+            # Some backends don't return 409/"found" consistently for existing users.
+            # Recover profile/token explicitly so event verification can proceed.
+            if not session.backend_token:
+                guest = backend.check_guest_registration(phone)
+                if guest.status == "found" and guest.guest:
+                    session.guest_id = guest.guest.guest_id
+                    session.backend_token = guest.token
+                    session.funeral_unique_codes = guest.guest.funeral_unique_codes
 
         # Now that we (likely) have a token, verify the previously collected event code.
         if not session.event_code:
