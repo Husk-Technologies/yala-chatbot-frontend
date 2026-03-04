@@ -1,6 +1,6 @@
 # WhatsApp Bot (WhatsApp Cloud API) – Phase 1 Menu Bot
 
-Menu-driven WhatsApp webhook for Yala (event code → name → menu: brochure / donate / condolence).
+Menu-driven WhatsApp webhook for Yala (event code → name → menu: brochure / donate / well wishes).
 
 ## Setup
 
@@ -132,11 +132,11 @@ Optional local debug endpoints (disabled by default):
    - If the API returns `description`, the bot uses it as the event/funeral display name in the conversation flow.
    - If `description` is missing, the bot falls back to the configured default event name behavior.
 
-- Condolence submission (`POST condolence-submit`):
+- Well wishes submission (`POST condolence-submit`):
    - If the API returns `success: false` with a message like `Condolence messages are disabled for this funeral.`, the bot now shows that backend message to the user.
    - Other failures continue to use the generic fallback error response.
 
 ## Conversation behavior notes
 
 - Interactive menu taps always take priority over pending text-entry prompts.
-   - Example: if a user is in `Send condolence` or `Donation amount` input mode and taps `Location` from the interactive menu, the bot treats that as a menu navigation action (not as free-text input to submit).
+   - Example: if a user is in `Send well wishes` or `Donation amount` input mode and taps `Location` from the interactive menu, the bot treats that as a menu navigation action (not as free-text input to submit).

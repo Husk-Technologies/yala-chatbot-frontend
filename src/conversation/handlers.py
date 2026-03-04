@@ -83,8 +83,11 @@ def _normalize_choice(text: str) -> str:
 
         "3": "condolence",
         "condolence": "condolence",
+        "well wish": "condolence",
+        "well wishes": "condolence",
         "message": "condolence",
         "send message": "condolence",
+        "send well wishes": "condolence",
 
         "4": "location",
         "location": "location",
@@ -110,7 +113,7 @@ def _menu_text(guest_name: str) -> str:
         "How can we help you today?\n\n"
         "1. 📄 Download Event Brochure\n"
         "2. 💝 Give / Donate\n"
-        "3. 🕊️ Send Condolence / Message\n"
+        "3. 🕊️ Send Well Wishes / Message\n"
         "4. 📍 Location\n"
         "5. ☎️ Contact Us"
     )
@@ -129,7 +132,7 @@ def _event_intro_text(event_name: str | None) -> str:
 
 def _condolence_prompt_text() -> str:
     return (
-        "Please select a message from the list or type your own condolence message.\n"
+        "Please select a message from the list or type your own well wishes message.\n"
         "(Reply *0* or *back* to return to the menu.)"
     )
 
@@ -664,7 +667,7 @@ def handle_incoming_message(
                     text=_condolence_prompt_text(),
                     interactive_menu=True,
                     interactive_button_text="Choose message",
-                    interactive_section_title="Condolence Options",
+                    interactive_section_title="Well Wishes Options",
                     interactive_rows=_condolence_template_rows(),
                 )
 
@@ -856,7 +859,7 @@ def handle_incoming_message(
                 text=_condolence_prompt_text(),
                 interactive_menu=True,
                 interactive_button_text="Choose message",
-                interactive_section_title="Condolence Options",
+                interactive_section_title="Well Wishes Options",
                 interactive_rows=_condolence_template_rows(),
             )
 
@@ -881,7 +884,7 @@ def handle_incoming_message(
                 text=_condolence_prompt_text(),
                 interactive_menu=True,
                 interactive_button_text="Choose message",
-                interactive_section_title="Condolence Options",
+                interactive_section_title="Well Wishes Options",
                 interactive_rows=_condolence_template_rows(),
             )
 
@@ -920,7 +923,7 @@ def handle_incoming_message(
             )
 
         if result.status == "unavailable":
-            return OutgoingMessage(text=(result.error or "Condolence messages are disabled for this funeral.") + _menu_hint())
+            return OutgoingMessage(text=(result.error or "Well wishes messages are disabled for this funeral.") + _menu_hint())
 
         return OutgoingMessage(
             text=(
