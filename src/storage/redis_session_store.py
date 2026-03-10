@@ -67,6 +67,7 @@ class RedisSessionStore:
                 event_location_url=data.get("event_location_url"),
                 guest_name=data.get("guest_name"),
                 guest_id=data.get("guest_id"),
+                donation_reference_name=data.get("donation_reference_name"),
                 backend_token=data.get("backend_token"),
                 funeral_unique_codes=data.get("funeral_unique_codes"),
                 event_descriptions=data.get("event_descriptions"),

@@ -756,6 +756,17 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
 
+        if not session.donation_reference_name:
+            session.state = ConversationState.WAIT_DONATION_REFERENCE.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=(
+                    "Who would you like to make this donation to?\n"
+                    "For example: *Family A*, *Family B*, or a person's name.\n"
+                    "(Reply *back* to return to the menu.)"
+                )
+            )
+
         if not session.guest_id:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
@@ -803,7 +814,7 @@ def handle_incoming_message(
         intent = backend.create_donation_intent(
             session.event_id,
             session.guest_id,
-            session.donation_reference_name or session.guest_name,
+            session.donation_reference_name,
             amount,
             token=session.backend_token,
         )
@@ -819,7 +830,7 @@ def handle_incoming_message(
                 intent = backend.create_donation_intent(
                     session.event_id,
                     session.guest_id,
-                    session.donation_reference_name or session.guest_name,
+                    session.donation_reference_name,
                     amount,
                     token=session.backend_token,
                 )
