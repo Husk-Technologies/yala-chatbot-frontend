@@ -669,11 +669,13 @@ def handle_incoming_message(
                 if not session.event_id:
                     return OutgoingMessage(text="Missing event context. Please type 'restart'.")
 
-                session.state = ConversationState.WAIT_DONATION_AMOUNT.value
+                session.donation_reference_name = None
+                session.state = ConversationState.WAIT_DONATION_REFERENCE.value
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
                     text=(
-                        "Please enter the amount you would like to donate (e.g., 50).\n"
+                        "Who would you like to make this donation to?\n"
+                        "For example: *Family A*, *Family B*, or a person\'s name.\n"
                         "(Reply *back* to return to the menu.)"
                     )
                 )
@@ -801,7 +803,7 @@ def handle_incoming_message(
         intent = backend.create_donation_intent(
             session.event_id,
             session.guest_id,
-            session.guest_name,
+            session.donation_reference_name or session.guest_name,
             amount,
             token=session.backend_token,
         )
@@ -817,18 +819,20 @@ def handle_incoming_message(
                 intent = backend.create_donation_intent(
                     session.event_id,
                     session.guest_id,
-                    session.guest_name,
+                    session.donation_reference_name or session.guest_name,
                     amount,
                     token=session.backend_token,
                 )
 
         if intent.status == "unavailable":
             session.state = ConversationState.MENU.value
+            session.donation_reference_name = None
             store.upsert(sender_key, session)
             return OutgoingMessage(text="This event does not accept donations." + _menu_hint())
 
         if intent.status == "ready" and intent.intent:
             session.state = ConversationState.MENU.value
+            session.donation_reference_name = None
             store.upsert(sender_key, session)
             formatted_amount = f"GH¢{amount:g}"
             return OutgoingMessage(
@@ -845,6 +849,50 @@ def handle_incoming_message(
                 f"Sorry, we couldn’t process your donation request.\n"
                 f"({error_msg})\n"
                 "Please try again or reply *back*."
+            )
+        )
+
+    if session.state == ConversationState.WAIT_DONATION_REFERENCE.value:
+        if not session.guest_name or not session.event_id:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
+
+        if choice == "back" or choice == "menu":
+            session.state = ConversationState.MENU.value
+            session.donation_reference_name = None
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text=_menu_text(session.guest_name))
+
+        if choice in {"brochure", "donate", "condolence", "location", "contact"}:
+            session.state = ConversationState.MENU.value
+            session.donation_reference_name = None
+            store.upsert(sender_key, session)
+            return handle_incoming_message(
+                sender_key=sender_key,
+                incoming_text=choice,
+                store=store,
+                backend=backend,
+                settings=settings,
+            )
+
+        reference_name = normalize_text(text)
+        if not reference_name:
+            return OutgoingMessage(
+                text=(
+                    "Please enter who the donation is for.\n"
+                    "For example: *Family A*, *Family B*, or a person\'s name."
+                )
+            )
+
+        session.donation_reference_name = reference_name
+        session.state = ConversationState.WAIT_DONATION_AMOUNT.value
+        store.upsert(sender_key, session)
+        return OutgoingMessage(
+            text=(
+                f"Donation target: *{reference_name}*\n\n"
+                "Please enter the amount you would like to donate (e.g., 50).\n"
+                "(Reply *back* to return to the menu.)"
             )
         )
 

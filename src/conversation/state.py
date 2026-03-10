@@ -8,6 +8,7 @@ class ConversationState(str, Enum):
     WAIT_NAME = "wait_name"
     MENU = "menu"
     WAIT_CONDOLENCE = "wait_condolence"
+    WAIT_DONATION_REFERENCE = "wait_donation_reference"
     WAIT_DONATION_AMOUNT = "wait_donation_amount"
 
 

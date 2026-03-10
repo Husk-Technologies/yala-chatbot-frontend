@@ -16,6 +16,7 @@ class Session:
     event_location_url: str | None = None
     guest_name: str | None = None
     guest_id: str | None = None
+    donation_reference_name: str | None = None
     backend_token: str | None = None
     funeral_unique_codes: list[str] | None = None
     # Cache: maps event code -> description so we never lose it across lookups.
