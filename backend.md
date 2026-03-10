@@ -320,8 +320,8 @@ Authorization / authentication failures (if protected)
 # Make donations
 Overview
 Initializes a donation for a funeral guest and returns a payment checkout URL (via Paystack).
-POST {{base_url}}make-donation
-The {{base_url}} variable is resolved from your active environment (e.g., the yala url environment).
+POST https://api.yalasolution.com/api/make-donation
+The https://api.yalasolution.com/api/ variable is resolved from your active environment (e.g., the yala url environment).
 
 StartFragment
 Authorization
@@ -336,20 +336,19 @@ JSON
   "message": "Invalid token"
 }
 
-
 Request
 Method: POST
-URL: {{base_url}}make-donation
+URL: https://api.yalasolution.com/api/make-donation
 Body type: raw → JSON
 
 Request body schema:
-
 
 JSON
 
 {
   "funeralUniqueCode": "DE2022",             // String. Unique code identifying the funeral.
-  "guestId": "69764a754c55dc7bd8cda7d4",    // String. ID of the guest making the donation.
+  "guestId": "69764a754c55dc7bd8cda7d4", 
+    "referenceName": "Ama Akpaflo",
   "donationAmount": 2                       // Number. Donation amount (currency defined by backend).
 }
 
@@ -361,12 +360,9 @@ donationAmount (number) – amount to be charged.
 
 Example request body (current sample):
 
-
-
 Successful Response (200)
 On success, the API initializes the donation and returns a checkout URL for payment.
 Example 200 response:
-
 
 JSON
 
@@ -388,14 +384,15 @@ If the funeral/event does not accept donations, the API returns a 404 Not Found 
 Status: 404 Not Found
 Example response:
 
-
 JSON
 
 {
   "success": false,
   "message": "This event does not accept donations",
-  "donationAllowed": false
+  "donationAllow
+
 }
+
 
 
 

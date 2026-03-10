@@ -397,12 +397,14 @@ class HttpBackendClient(BackendClient):
         self,
         event_id: str,
         guest_id: str,
+        reference_name: str,
         amount: float,
         token: str | None = None,
     ) -> DonationIntentResult:
         payload = {
             "funeralUniqueCode": event_id,
             "guestId": guest_id,
+            "referenceName": (reference_name or "").strip(),
             "donationAmount": amount,
         }
         status_code, data, error = self._post_json("make-donation", payload, bearer_token=token)
@@ -411,6 +413,15 @@ class HttpBackendClient(BackendClient):
             # Funeral does not accept donations or not found
             # The API doc says: "This event does not accept donations"
             return DonationIntentResult(status="unavailable", error=error)
+
+        if isinstance(data, dict) and data.get("success") is False:
+            message = str(data.get("message") or data.get("error") or "").strip()
+            donation_allowed = data.get("donationAllowed")
+            if donation_allowed is False or "does not accept donations" in message.lower():
+                return DonationIntentResult(
+                    status="unavailable",
+                    error=message or "This event does not accept donations",
+                )
 
         if error or not data:
             return DonationIntentResult(status="error", error=error)

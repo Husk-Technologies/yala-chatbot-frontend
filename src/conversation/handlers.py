@@ -801,6 +801,7 @@ def handle_incoming_message(
         intent = backend.create_donation_intent(
             session.event_id,
             session.guest_id,
+            session.guest_name,
             amount,
             token=session.backend_token,
         )
@@ -816,6 +817,7 @@ def handle_incoming_message(
                 intent = backend.create_donation_intent(
                     session.event_id,
                     session.guest_id,
+                    session.guest_name,
                     amount,
                     token=session.backend_token,
                 )

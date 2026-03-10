@@ -102,6 +102,7 @@ class BackendClient(Protocol):
         self,
         event_id: str,
         guest_id: str,
+        reference_name: str,
         amount: float,
         token: str | None = None,
     ) -> DonationIntentResult: ...
