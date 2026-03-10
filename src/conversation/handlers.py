@@ -724,7 +724,7 @@ def handle_incoming_message(
                         lines.append(f"🕒 Time: {formatted_time}")
 
                     if loc.location.link:
-                        lines.append(f"🗺️ Map: {loc.location.link}")
+                        lines.append(f"🗺️ Directions: {loc.location.link}")
                 else:
                     error = loc.error or "Location details are not available yet."
                     lines = [f"Sorry, {error}"]
