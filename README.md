@@ -140,3 +140,26 @@ Optional local debug endpoints (disabled by default):
 
 - Interactive menu taps always take priority over pending text-entry prompts.
    - Example: if a user is in `Send well wishes` or `Donation amount` input mode and taps `Location` from the interactive menu, the bot treats that as a menu navigation action (not as free-text input to submit).
+
+## TLS certificate expiry checks (EC2 + Nginx)
+
+Use the helper script to monitor cert validity for your deployed hostname:
+
+- `bash scripts/check_cert_expiry.sh yala-bot.duckdns.org 20`
+
+Exit codes:
+
+- `0` = cert is healthy (more than warning days left)
+- `1` = cert is valid but close to expiry (warning)
+- `2` = cert expired or check failed (critical)
+
+Recommended cron on EC2 (daily at 8:00 AM):
+
+- `crontab -e`
+- Add:
+   - `0 8 * * * /bin/bash /home/ubuntu/yala-chatbot-frontend/scripts/check_cert_expiry.sh yala-bot.duckdns.org 20 | /usr/bin/logger -t cert-check`
+
+Optional manual renewal and dry-run:
+
+- `sudo certbot renew --dry-run`
+- `sudo certbot renew && sudo systemctl reload nginx`
