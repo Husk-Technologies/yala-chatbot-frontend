@@ -690,7 +690,7 @@ def handle_incoming_message(
                     text=(
                         "☎️ Contact Us\n"
                         "Call/WhatsApp: +233 24 991 0999\n"
-                        "Website: https://dashboard.yalasolution.com/"
+                        "Website: https://yalasolution.com/"
                         + _menu_hint()
                     )
                 )

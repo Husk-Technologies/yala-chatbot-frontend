@@ -374,7 +374,7 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
                     body = main_text or "Please choose an option."
                 else:
                     rows = [
-                        {"id": "brochure", "title": "Download Brochure", "description": "Get the Event PDF"},
+                        {"id": "brochure", "title": "Download Brochure", "description": "Get Event Brochure"},
                         {"id": "donate", "title": "Give / Donate", "description": "Support the Family"},
                         {"id": "condolence", "title": "Send Well Wishes", "description": "Send a Message"},
                         {"id": "location", "title": "Location", "description": "View Venue Details"},
