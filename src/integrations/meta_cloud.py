@@ -103,6 +103,39 @@ class MetaWhatsAppCloud:
             logger.exception("Meta send_document exception")
             return False
 
+    def send_video(self, *, to: str, link: str, caption: str | None = None) -> bool:
+        if not self.is_configured():
+            logger.warning(
+                "Meta Cloud API not configured; cannot send video (missing META_WA_ACCESS_TOKEN or META_WA_PHONE_NUMBER_ID)"
+            )
+            return False
+
+        if not (link or "").startswith(("http://", "https://")):
+            logger.error("Meta send_video requires a public URL link; got: %r", link)
+            return False
+
+        url = self._endpoint(f"{self._settings.meta_phone_number_id}/messages")
+        video: dict[str, Any] = {"link": link}
+        if caption:
+            video["caption"] = caption
+
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "video",
+            "video": video,
+        }
+
+        try:
+            resp = self._session().post(url, headers=self._headers(), json=payload, timeout=self._timeout(20))
+            if resp.status_code >= 400:
+                logger.error("Meta send_video failed: %s %s", resp.status_code, resp.text)
+                return False
+            return True
+        except Exception:  # noqa: BLE001
+            logger.exception("Meta send_video exception")
+            return False
+
     def send_list_menu(
         self,
         *,

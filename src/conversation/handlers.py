@@ -27,12 +27,7 @@ WELCOME_TEXT = (
 )
 
 
-CONDOLENCE_TEMPLATES: list[str] = [
-    "My deepest condolences. May your family find strength.",
-    "So sorry for your loss. Thoughts and prayers with you.",
-    "Heartfelt sympathy. Praying for peace and comfort.",
-    "May your loved one rest in peace. Sending love.",
-]
+
 
 
 def _is_greeting(text: str) -> bool:
@@ -132,58 +127,19 @@ def _event_intro_text(event_name: str | None) -> str:
 
 def _condolence_prompt_text() -> str:
     return (
-        "Please select a message from the list or type your own well wishes message.\n"
+        "Please type your well wishes message.\n"
         "(Reply *0* or *back* to return to the menu.)"
     )
 
 
-def _resolve_condolence_template(text: str) -> str | None:
-    t = normalize_text(text)
-    if not t:
-        return None
 
-    if t in {"1", "2", "3", "4"}:
-        return CONDOLENCE_TEMPLATES[int(t) - 1]
-
-    if t.startswith("condolence_option:"):
-        raw_idx = t.split(":", 1)[1].strip()
-        if raw_idx in {"1", "2", "3", "4"}:
-            return CONDOLENCE_TEMPLATES[int(raw_idx) - 1]
-
-    lowered = t.lower()
-    aliases: dict[str, int] = {
-        "option 1": 0,
-        "option 2": 1,
-        "option 3": 2,
-        "option 4": 3,
-        "message 1": 0,
-        "message 2": 1,
-        "message 3": 2,
-        "message 4": 3,
-    }
-    idx = aliases.get(lowered)
-    if idx is None:
-        return None
-    return CONDOLENCE_TEMPLATES[idx]
 
 
 def _normalize_event_code(code: str) -> str:
     return (code or "").strip().upper()
 
 
-def _condolence_template_rows() -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
-    for idx, template in enumerate(CONDOLENCE_TEMPLATES, start=1):
-        # WhatsApp interactive list row descriptions are limited to 72 chars.
-        desc = template if len(template) <= 72 else template[:69] + "..."
-        rows.append(
-            {
-                "id": f"condolence_option:{idx}",
-                "title": f"Message {idx}",
-                "description": desc,
-            }
-        )
-    return rows
+
 
 
 def _format_location_time(raw_time: str | None) -> str | None:
@@ -685,10 +641,6 @@ def handle_incoming_message(
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
                     text=_condolence_prompt_text(),
-                    interactive_menu=True,
-                    interactive_button_text="Choose message",
-                    interactive_section_title="Well Wishes Options",
-                    interactive_rows=_condolence_template_rows(),
                 )
 
             if choice == "location":
@@ -936,18 +888,12 @@ def handle_incoming_message(
         if normalize_text(text).lower() in {"options", "list", "templates"}:
             return OutgoingMessage(
                 text=_condolence_prompt_text(),
-                interactive_menu=True,
-                interactive_button_text="Choose message",
-                interactive_section_title="Well Wishes Options",
-                interactive_rows=_condolence_template_rows(),
             )
 
-        selected_template = _resolve_condolence_template(text)
-        message_to_send = selected_template if selected_template else text
+        message_to_send = normalize_text(text)
 
-        # Keep menu shortcuts available in this state, but do not let global
-        # numeric mapping (1-4) hijack condolence template choices.
-        if not selected_template and choice in {"brochure", "donate", "condolence", "location", "contact"}:
+        # Allow menu shortcuts in this state.
+        if choice in {"brochure", "donate", "condolence", "location", "contact"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return handle_incoming_message(
@@ -961,10 +907,6 @@ def handle_incoming_message(
         if not message_to_send:
             return OutgoingMessage(
                 text=_condolence_prompt_text(),
-                interactive_menu=True,
-                interactive_button_text="Choose message",
-                interactive_section_title="Well Wishes Options",
-                interactive_rows=_condolence_template_rows(),
             )
 
         result = backend.submit_condolence(

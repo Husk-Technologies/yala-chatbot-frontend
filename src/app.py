@@ -291,6 +291,25 @@ def _strip_menu_footer(text: str, guest_name: str | None) -> tuple[str, bool]:
     return t, False
 
 
+def _detect_media_type(url: str) -> str:
+    """Detect media type from URL extension.
+    
+    Returns 'video' for video formats, 'document' for all others.
+    """
+    if not url:
+        return "document"
+    
+    # Extract path/query and normalize
+    path = url.lower().split("?")[0]  # remove query params
+    
+    video_extensions = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m3u8"}
+    for ext in video_extensions:
+        if path.endswith(ext):
+            return "video"
+    
+    return "document"
+
+
 def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
     # Ensure a single in-flight handler per sender to avoid session races.
     # - Local lock covers single-process setups
@@ -383,15 +402,25 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
                     return
                 # If interactive send fails, fall back to plain text.
 
-            # Send brochure as document when a media URL is present; otherwise send text.
+            # Send brochure using appropriate media type (document, video, etc.).
             if outgoing.media_url:
-                logger.info("Sending document to %s via link: %s", from_wa, outgoing.media_url)
-                META.send_document(
-                    to=from_wa,
-                    link=outgoing.media_url,
-                    caption=main_text,
-                    filename="brochure.pdf",
-                )
+                media_type = _detect_media_type(outgoing.media_url)
+                
+                if media_type == "video":
+                    logger.info("Sending video to %s via link: %s", from_wa, outgoing.media_url)
+                    META.send_video(
+                        to=from_wa,
+                        link=outgoing.media_url,
+                        caption=main_text,
+                    )
+                else:
+                    logger.info("Sending document to %s via link: %s", from_wa, outgoing.media_url)
+                    META.send_document(
+                        to=from_wa,
+                        link=outgoing.media_url,
+                        caption=main_text,
+                        filename="brochure.pdf",
+                    )
             else:
                 META.send_text(to=from_wa, body=main_text)
     finally:
