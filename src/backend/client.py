@@ -68,6 +68,18 @@ class FuneralLocationResult:
 
 
 @dataclass(frozen=True)
+class PhotoLink:
+    url: str
+
+
+@dataclass(frozen=True)
+class PhotoLinkResult:
+    status: str  # "ready" | "missing" | "error"
+    photo_link: PhotoLink | None = None
+    error: str | None = None
+
+
+@dataclass(frozen=True)
 class Guest:
     guest_id: str
     full_name: str
@@ -89,6 +101,10 @@ class BackendClient(Protocol):
     def get_brochure(self, event_id: str, token: str | None = None) -> BrochureResult: ...
 
     def get_funeral_location(self, event_id: str, token: str | None = None) -> FuneralLocationResult: ...
+
+    def get_upload_photo_link(self, event_id: str, token: str | None = None) -> PhotoLinkResult: ...
+
+    def get_download_photo_link(self, event_id: str, token: str | None = None) -> PhotoLinkResult: ...
 
     def submit_condolence(
         self,

@@ -254,7 +254,8 @@ def _menu_footer_text(guest_name: str) -> str:
         "2. 💝 Give / Donate\n"
         "3. 🕊️ Send Well Wishes / Message\n"
         "4. 📍 Location\n"
-        "5. ☎️ Contact Us"
+        "5. ☎️ Contact Us\n"
+        "6. 📷 Photos"
     )
 
 
@@ -263,7 +264,8 @@ _MENU_MARKER = (
     "2. 💝 Give / Donate\n"
     "3. 🕊️ Send Well Wishes / Message\n"
     "4. 📍 Location\n"
-    "5. ☎️ Contact Us"
+    "5. ☎️ Contact Us\n"
+    "6. 📷 Photos"
 )
 
 
@@ -379,6 +381,7 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
                         {"id": "condolence", "title": "Send Well Wishes", "description": "Send a Message"},
                         {"id": "location", "title": "Location", "description": "View Venue Details"},
                         {"id": "contact", "title": "Contact Us", "description": "Call or Visit Our Website"},
+                        {"id": "photos", "title": "Photos", "description": "Upload or Download Event Photos"},
                     ]
                     section_title = outgoing.interactive_section_title or "Yala Menu"
                     menu_prompt = (

@@ -393,6 +393,115 @@ JSON
 
 }
 
+# Get Upload photo link
+Fetch upload photo link for an event
+Purpose
+Returns the Google Drive folder link where photos for a specific event can be uploaded.
+Request
+GET {{base_url}}funeral-upload-photo-link/:uniqueCode
+Required variables
+{{base_url}} (environment variable, e.g. in environment yala url): Base URL for the API.
+uniqueCode (path variable): The event’s unique code.
+
+Path parameters
+:uniqueCode (string, required) — Event unique code.
+Example: CO2024
+
+
+Response (200 OK)
+Response body includes:
+success (boolean) — Indicates whether the operation succeeded.
+message (string) — Human-readable status message.
+photoLink (string | null) — Google Drive folder URL to upload photos.
+
+Example response:
+
+
+JSON
+
+{
+  "success": true,
+  "message": "Event upload photo link fetched successfully",
+  "photoLink": "https://drive.google.com/drive/folders/<folderId>"
+}
+Usage example
+1) Ensure base_url is set in the active environment.
+2) Set the path variable uniqueCode.
+Example URL:
+{{base_url}}funeral-upload-photo-link/CO2024
+Then send the request; use the returned photoLink to open the Google Drive folder for uploads.
+
+# Get download photo link
+Purpose
+Fetch a shareable download link (Google Drive folder link) for event photos associated with a funeral/event identified by a unique code.
+Endpoint
+GET https://api.yalasolution.com/api/funeral-download-photo-link/:uniqueCode
+Path variable
+NameTypeRequiredExampleDescriptionuniqueCode
+
+string
+
+yes
+
+CO2024
+
+Unique code that identifies the funeral/event whose photo download link should be returned.
+
+Required environment variable
+This request expects the following variable to be defined in your active environment (currently: yala url):
+VariableExampleDescriptionbase_url
+
+https://api.example.com/
+
+Base URL for the API (include trailing / if your API requires it).
+
+Example request
+
+
+Plain Text
+
+
+GET https://api.yalasolution.com/api/funeral-download-photo-link/CO2024
+
+
+Success response (200)
+Response body (JSON)
+
+
+JSON
+
+{
+  "success": true,
+  "message": "Event download photo link fetched successfully",
+  "photoLink": "https://drive.google.com/drive/folders/..."
+}
+
+
+Fields
+FieldTypeDescriptionsuccess
+
+boolean
+
+Indicates whether the operation succeeded.
+
+message
+
+string
+
+Human-readable status message.
+
+photoLink
+
+string (url)
+
+A Google Drive folder link where photos can be downloaded.
+
+Common error responses
+Exact status codes/messages may vary depending on the API implementation.
+400 Bad Request — Missing/invalid uniqueCode.
+404 Not Found — No event found for the provided uniqueCode, or no photo folder/link exists.
+401 Unauthorized / 403 Forbidden — Authentication/authorization failed (if the API is protected in your environment).
+500 Internal Server Error — Unexpected server error.
 
 
 

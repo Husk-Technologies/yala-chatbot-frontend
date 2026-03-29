@@ -97,6 +97,14 @@ def _normalize_choice(text: str) -> str:
         "support": "contact",
         "help desk": "contact",
         "customer care": "contact",
+
+        "6": "photos",
+        "photos": "photos",
+        "photo": "photos",
+        "upload photos": "upload_photos",
+        "upload photo": "upload_photos",
+        "download photos": "download_photos",
+        "download photo": "download_photos",
     }
 
     return aliases.get(t, t)
@@ -110,7 +118,8 @@ def _menu_text(guest_name: str) -> str:
         "2. 💝 Give / Donate\n"
         "3. 🕊️ Send Well Wishes / Message\n"
         "4. 📍 Location\n"
-        "5. ☎️ Contact Us"
+        "5. ☎️ Contact Us\n"
+        "6. 📷 Photos"
     )
 
 
@@ -130,6 +139,22 @@ def _condolence_prompt_text() -> str:
         "Please type your well wishes message.\n"
         "(Reply *0* or *back* to return to the menu.)"
     )
+
+
+def _photos_prompt_text() -> str:
+    return (
+        "What would you like to do with event photos?\n"
+        "1. 📤 Upload Photos\n"
+        "2. 📥 Download Photos\n"
+        "(Reply *0* or *back* to return to the menu.)"
+    )
+
+
+def _photos_rows() -> list[dict[str, str]]:
+    return [
+        {"id": "upload_photos", "title": "Upload Photos", "description": "Share Photos to Event Folder"},
+        {"id": "download_photos", "title": "Download Photos", "description": "View Event Photo Gallery"},
+    ]
 
 
 
@@ -590,7 +615,7 @@ def handle_incoming_message(
                 guest_name=session.guest_name,
             )
 
-        if choice in {"brochure", "donate", "condolence", "location", "contact"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
             if choice == "brochure":
                 if not session.event_id:
                     return OutgoingMessage(text="Missing event context. Please type 'restart'.")
@@ -695,6 +720,17 @@ def handle_incoming_message(
                     )
                 )
 
+            if choice == "photos":
+                session.state = ConversationState.WAIT_PHOTOS_MENU.value
+                store.upsert(sender_key, session)
+                return OutgoingMessage(
+                    text=_photos_prompt_text(),
+                    interactive_menu=True,
+                    interactive_button_text="Choose photo option",
+                    interactive_section_title="Event Photos",
+                    interactive_rows=_photos_rows(),
+                )
+
         # Unrecognized input (including greetings like "hi") — just show the menu.
         return OutgoingMessage(
             text=_menu_text(session.guest_name),
@@ -748,7 +784,7 @@ def handle_incoming_message(
 
         # If the input isn't a valid number, allow menu shortcuts to work.
         if amount is None:
-            if choice in {"brochure", "donate", "condolence", "location", "contact"}:
+            if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
                 session.state = ConversationState.MENU.value
                 store.upsert(sender_key, session)
                 return handle_incoming_message(
@@ -827,7 +863,7 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text=_menu_text(session.guest_name))
 
-        if choice in {"brochure", "donate", "condolence", "location", "contact"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
             session.state = ConversationState.MENU.value
             session.donation_reference_name = None
             store.upsert(sender_key, session)
@@ -893,7 +929,7 @@ def handle_incoming_message(
         message_to_send = normalize_text(text)
 
         # Allow menu shortcuts in this state.
-        if choice in {"brochure", "donate", "condolence", "location", "contact"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return handle_incoming_message(
@@ -952,6 +988,88 @@ def handle_incoming_message(
                 "Please try again later."
                 + _menu_hint()
             )
+        )
+
+    if session.state == ConversationState.WAIT_PHOTOS_MENU.value:
+        if not session.guest_name or not session.event_id:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
+
+        if choice in {"back", "menu"}:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=_menu_text(session.guest_name),
+                interactive_menu=True,
+                guest_name=session.guest_name,
+            )
+
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return handle_incoming_message(
+                sender_key=sender_key,
+                incoming_text=choice,
+                store=store,
+                backend=backend,
+                settings=settings,
+            )
+
+        photo_choice = choice
+        if normalize_text(text).lower() in {"1", "upload"}:
+            photo_choice = "upload_photos"
+        elif normalize_text(text).lower() in {"2", "download"}:
+            photo_choice = "download_photos"
+
+        if photo_choice == "upload_photos":
+            result = backend.get_upload_photo_link(session.event_id, token=session.backend_token)
+            if result.status == "error" and _looks_like_auth_error(result.error):
+                if _refresh_guest_auth_if_possible(
+                    backend=backend,
+                    sender_key=sender_key,
+                    session=session,
+                    phone_number=phone_number,
+                    store=store,
+                ):
+                    result = backend.get_upload_photo_link(session.event_id, token=session.backend_token)
+
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+
+            if result.status == "ready" and result.photo_link:
+                return OutgoingMessage(text=(f"📸 Upload photos here:\n{result.photo_link.url}" + _menu_hint()))
+
+            error = result.error or "Upload photo link is not available right now."
+            return OutgoingMessage(text=(f"Sorry, {error}" + _menu_hint()))
+
+        if photo_choice == "download_photos":
+            result = backend.get_download_photo_link(session.event_id, token=session.backend_token)
+            if result.status == "error" and _looks_like_auth_error(result.error):
+                if _refresh_guest_auth_if_possible(
+                    backend=backend,
+                    sender_key=sender_key,
+                    session=session,
+                    phone_number=phone_number,
+                    store=store,
+                ):
+                    result = backend.get_download_photo_link(session.event_id, token=session.backend_token)
+
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+
+            if result.status == "ready" and result.photo_link:
+                return OutgoingMessage(text=(f"🖼️ Download event photos here:\n{result.photo_link.url}" + _menu_hint()))
+
+            error = result.error or "Download photo link is not available right now."
+            return OutgoingMessage(text=(f"Sorry, {error}" + _menu_hint()))
+
+        return OutgoingMessage(
+            text=_photos_prompt_text(),
+            interactive_menu=True,
+            interactive_button_text="Choose photo option",
+            interactive_section_title="Event Photos",
+            interactive_rows=_photos_rows(),
         )
 
     # Unknown state: reset politely

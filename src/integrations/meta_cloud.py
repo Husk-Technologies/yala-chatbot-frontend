@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 import threading
+import json
 
 import requests
 
@@ -43,6 +44,29 @@ class MetaWhatsAppCloud:
             "Content-Type": "application/json",
         }
 
+    def _log_meta_http_error(self, action: str, resp: requests.Response) -> None:
+        body_text = (resp.text or "").strip()
+        logger.error("Meta %s failed: %s %s", action, resp.status_code, body_text)
+
+        if resp.status_code != 401:
+            return
+
+        err_code: int | None = None
+        err_msg = ""
+        try:
+            payload = resp.json()
+            err = payload.get("error", {}) if isinstance(payload, dict) else {}
+            err_code = err.get("code") if isinstance(err, dict) else None
+            err_msg = str(err.get("message") or "") if isinstance(err, dict) else ""
+        except (ValueError, json.JSONDecodeError):
+            pass
+
+        if err_code == 190 or "token has expired" in err_msg.lower():
+            logger.error(
+                "Meta access token is expired (OAuth code 190). "
+                "Generate a new WhatsApp Cloud API token, update META_WA_ACCESS_TOKEN, then restart the app container/process."
+            )
+
     def send_text(self, *, to: str, body: str) -> bool:
         if not self.is_configured():
             logger.warning(
@@ -61,7 +85,7 @@ class MetaWhatsAppCloud:
         try:
             resp = self._session().post(url, headers=self._headers(), json=payload, timeout=self._timeout(10))
             if resp.status_code >= 400:
-                logger.error("Meta send_text failed: %s %s", resp.status_code, resp.text)
+                self._log_meta_http_error("send_text", resp)
                 return False
             return True
         except Exception:  # noqa: BLE001
@@ -96,7 +120,7 @@ class MetaWhatsAppCloud:
         try:
             resp = self._session().post(url, headers=self._headers(), json=payload, timeout=self._timeout(20))
             if resp.status_code >= 400:
-                logger.error("Meta send_document failed: %s %s", resp.status_code, resp.text)
+                self._log_meta_http_error("send_document", resp)
                 return False
             return True
         except Exception:  # noqa: BLE001
@@ -129,7 +153,7 @@ class MetaWhatsAppCloud:
         try:
             resp = self._session().post(url, headers=self._headers(), json=payload, timeout=self._timeout(20))
             if resp.status_code >= 400:
-                logger.error("Meta send_video failed: %s %s", resp.status_code, resp.text)
+                self._log_meta_http_error("send_video", resp)
                 return False
             return True
         except Exception:  # noqa: BLE001
@@ -184,7 +208,7 @@ class MetaWhatsAppCloud:
         try:
             resp = self._session().post(url, headers=self._headers(), json=payload, timeout=self._timeout(20))
             if resp.status_code >= 400:
-                logger.error("Meta send_list_menu failed: %s %s", resp.status_code, resp.text)
+                self._log_meta_http_error("send_list_menu", resp)
                 return False
             return True
         except Exception:  # noqa: BLE001

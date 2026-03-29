@@ -20,6 +20,8 @@ from .client import (
     FuneralLocationResult,
     Guest,
     GuestAuthResult,
+    PhotoLink,
+    PhotoLinkResult,
     SubmitResult,
 )
 
@@ -347,6 +349,49 @@ class HttpBackendClient(BackendClient):
             link=(loc.get("link") or None),
         )
         return FuneralLocationResult(status="ready", location=location)
+
+    def _get_photo_link(self, path: str, token: str | None = None) -> PhotoLinkResult:
+        status_code, data, error = self._get_json(path, bearer_token=token)
+
+        if status_code in {404}:
+            return PhotoLinkResult(status="missing")
+
+        if error:
+            if isinstance(data, dict) and data.get("success") is False:
+                msg = str(data.get("message") or data.get("error") or "").strip()
+                return PhotoLinkResult(status="missing", error=msg or None)
+            return PhotoLinkResult(status="error", error=error)
+
+        if not isinstance(data, dict):
+            return PhotoLinkResult(status="missing")
+
+        if data.get("success") is False:
+            msg = str(data.get("message") or data.get("error") or "").strip()
+            return PhotoLinkResult(status="missing", error=msg or None)
+
+        photo_link = str(data.get("photoLink") or "").strip()
+        if not photo_link:
+            return PhotoLinkResult(status="missing")
+
+        if photo_link.startswith("/") or photo_link.startswith("./"):
+            base_for_join = self._base_url
+            if base_for_join and not base_for_join.endswith("/"):
+                base_for_join = base_for_join + "/"
+            photo_link = urljoin(base_for_join, photo_link)
+
+        return PhotoLinkResult(status="ready", photo_link=PhotoLink(url=photo_link))
+
+    def get_upload_photo_link(self, event_id: str, token: str | None = None) -> PhotoLinkResult:
+        normalized = (event_id or "").strip()
+        if not normalized:
+            return PhotoLinkResult(status="missing")
+        return self._get_photo_link(f"funeral-upload-photo-link/{normalized}", token=token)
+
+    def get_download_photo_link(self, event_id: str, token: str | None = None) -> PhotoLinkResult:
+        normalized = (event_id or "").strip()
+        if not normalized:
+            return PhotoLinkResult(status="missing")
+        return self._get_photo_link(f"funeral-download-photo-link/{normalized}", token=token)
 
     def submit_condolence(
         self,
