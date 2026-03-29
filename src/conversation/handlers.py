@@ -144,9 +144,7 @@ def _condolence_prompt_text() -> str:
 def _photos_prompt_text() -> str:
     return (
         "What would you like to do with event photos?\n"
-        "1. 📤 Upload Photos\n"
-        "2. 📥 Download Photos\n"
-        "(Reply *0* or *back* to return to the menu.)"
+        "Please choose an option below."
     )
 
 
