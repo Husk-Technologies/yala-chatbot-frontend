@@ -91,20 +91,20 @@ def _normalize_choice(text: str) -> str:
         "where": "location",
         "map": "location",
 
-        "5": "contact",
-        "contact": "contact",
-        "contact us": "contact",
-        "support": "contact",
-        "help desk": "contact",
-        "customer care": "contact",
-
-        "6": "photos",
+        "5": "photos",
         "photos": "photos",
         "photo": "photos",
         "upload photos": "upload_photos",
         "upload photo": "upload_photos",
         "download photos": "download_photos",
         "download photo": "download_photos",
+
+        "6": "contact",
+        "contact": "contact",
+        "contact us": "contact",
+        "support": "contact",
+        "help desk": "contact",
+        "customer care": "contact",
     }
 
     return aliases.get(t, t)
@@ -118,8 +118,8 @@ def _menu_text(guest_name: str) -> str:
         "2. 💝 Give / Donate\n"
         "3. 🕊️ Send Well Wishes / Message\n"
         "4. 📍 Location\n"
-        "5. ☎️ Contact Us\n"
-        "6. 📷 Photos"
+        "5. 📷 Photos\n"
+        "6. ☎️ Contact Us"
     )
 
 
@@ -346,7 +346,8 @@ def handle_incoming_message(
             "- *2* to donate\n"
             "- *3* to send a message\n"
             "- *4* for location\n"
-            "- *5* for contact us\n"
+            "- *5* for photos\n"
+            "- *6* for contact us\n"
             "- *0* to show the menu\n"
             "- *restart* to start over"
         )
