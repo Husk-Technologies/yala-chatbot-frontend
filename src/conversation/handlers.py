@@ -308,6 +308,58 @@ def _populate_event_details_for_code(
         _cache_event_description(session, code, result.event.name)
 
 
+def _handle_photo_action(
+    *,
+    action: str,
+    session: Session,
+    backend: BackendClient,
+    sender_key: str,
+    phone_number: str,
+    store: SessionStore,
+) -> OutgoingMessage:
+    if action == "upload_photos":
+        result = backend.get_upload_photo_link(session.event_id, token=session.backend_token)
+        if result.status == "error" and _looks_like_auth_error(result.error):
+            if _refresh_guest_auth_if_possible(
+                backend=backend,
+                sender_key=sender_key,
+                session=session,
+                phone_number=phone_number,
+                store=store,
+            ):
+                result = backend.get_upload_photo_link(session.event_id, token=session.backend_token)
+
+        store.upsert(sender_key, session)
+
+        if result.status == "ready" and result.photo_link:
+            return OutgoingMessage(text=(f"📸 Upload photos here:\n{result.photo_link.url}" + _menu_hint()))
+
+        error = result.error or "Upload photo link is not available right now."
+        return OutgoingMessage(text=(f"Sorry, {error}" + _menu_hint()))
+
+    if action == "download_photos":
+        result = backend.get_download_photo_link(session.event_id, token=session.backend_token)
+        if result.status == "error" and _looks_like_auth_error(result.error):
+            if _refresh_guest_auth_if_possible(
+                backend=backend,
+                sender_key=sender_key,
+                session=session,
+                phone_number=phone_number,
+                store=store,
+            ):
+                result = backend.get_download_photo_link(session.event_id, token=session.backend_token)
+
+        store.upsert(sender_key, session)
+
+        if result.status == "ready" and result.photo_link:
+            return OutgoingMessage(text=(f"🖼️ Download event photos here:\n{result.photo_link.url}" + _menu_hint()))
+
+        error = result.error or "Download photo link is not available right now."
+        return OutgoingMessage(text=(f"Sorry, {error}" + _menu_hint()))
+
+    raise ValueError(f"Unknown photo action: {action}")
+
+
 def handle_incoming_message(
     *,
     sender_key: str,
@@ -614,7 +666,7 @@ def handle_incoming_message(
                 guest_name=session.guest_name,
             )
 
-        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
             if choice == "brochure":
                 if not session.event_id:
                     return OutgoingMessage(text="Missing event context. Please type 'restart'.")
@@ -730,6 +782,17 @@ def handle_incoming_message(
                     interactive_rows=_photos_rows(),
                 )
 
+            if choice in {"upload_photos", "download_photos"}:
+                session.state = ConversationState.MENU.value
+                return _handle_photo_action(
+                    action=choice,
+                    session=session,
+                    backend=backend,
+                    sender_key=sender_key,
+                    phone_number=phone_number,
+                    store=store,
+                )
+
         # Unrecognized input (including greetings like "hi") — just show the menu.
         return OutgoingMessage(
             text=_menu_text(session.guest_name),
@@ -783,7 +846,7 @@ def handle_incoming_message(
 
         # If the input isn't a valid number, allow menu shortcuts to work.
         if amount is None:
-            if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
+            if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
                 session.state = ConversationState.MENU.value
                 store.upsert(sender_key, session)
                 return handle_incoming_message(
@@ -862,7 +925,7 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text=_menu_text(session.guest_name))
 
-        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
             session.state = ConversationState.MENU.value
             session.donation_reference_name = None
             store.upsert(sender_key, session)
@@ -928,7 +991,7 @@ def handle_incoming_message(
         message_to_send = normalize_text(text)
 
         # Allow menu shortcuts in this state.
-        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return handle_incoming_message(
@@ -1004,7 +1067,7 @@ def handle_incoming_message(
                 guest_name=session.guest_name,
             )
 
-        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos"}:
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return handle_incoming_message(
@@ -1021,47 +1084,16 @@ def handle_incoming_message(
         elif normalize_text(text).lower() in {"2", "download"}:
             photo_choice = "download_photos"
 
-        if photo_choice == "upload_photos":
-            result = backend.get_upload_photo_link(session.event_id, token=session.backend_token)
-            if result.status == "error" and _looks_like_auth_error(result.error):
-                if _refresh_guest_auth_if_possible(
-                    backend=backend,
-                    sender_key=sender_key,
-                    session=session,
-                    phone_number=phone_number,
-                    store=store,
-                ):
-                    result = backend.get_upload_photo_link(session.event_id, token=session.backend_token)
-
+        if photo_choice in {"upload_photos", "download_photos"}:
             session.state = ConversationState.MENU.value
-            store.upsert(sender_key, session)
-
-            if result.status == "ready" and result.photo_link:
-                return OutgoingMessage(text=(f"📸 Upload photos here:\n{result.photo_link.url}" + _menu_hint()))
-
-            error = result.error or "Upload photo link is not available right now."
-            return OutgoingMessage(text=(f"Sorry, {error}" + _menu_hint()))
-
-        if photo_choice == "download_photos":
-            result = backend.get_download_photo_link(session.event_id, token=session.backend_token)
-            if result.status == "error" and _looks_like_auth_error(result.error):
-                if _refresh_guest_auth_if_possible(
-                    backend=backend,
-                    sender_key=sender_key,
-                    session=session,
-                    phone_number=phone_number,
-                    store=store,
-                ):
-                    result = backend.get_download_photo_link(session.event_id, token=session.backend_token)
-
-            session.state = ConversationState.MENU.value
-            store.upsert(sender_key, session)
-
-            if result.status == "ready" and result.photo_link:
-                return OutgoingMessage(text=(f"🖼️ Download event photos here:\n{result.photo_link.url}" + _menu_hint()))
-
-            error = result.error or "Download photo link is not available right now."
-            return OutgoingMessage(text=(f"Sorry, {error}" + _menu_hint()))
+            return _handle_photo_action(
+                action=photo_choice,
+                session=session,
+                backend=backend,
+                sender_key=sender_key,
+                phone_number=phone_number,
+                store=store,
+            )
 
         return OutgoingMessage(
             text=_photos_prompt_text(),
