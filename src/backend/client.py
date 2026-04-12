@@ -10,6 +10,7 @@ class Event:
     name: str
     location: str | None = None
     location_url: str | None = None
+    event_type: str | None = None
 
 
 @dataclass(frozen=True)

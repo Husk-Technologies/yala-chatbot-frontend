@@ -63,6 +63,7 @@ class RedisSessionStore:
                 event_code=data.get("event_code"),
                 event_id=data.get("event_id"),
                 event_name=data.get("event_name"),
+                event_type=data.get("event_type"),
                 event_location=data.get("event_location"),
                 event_location_url=data.get("event_location_url"),
                 guest_name=data.get("guest_name"),

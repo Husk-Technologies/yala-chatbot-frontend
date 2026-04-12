@@ -214,3 +214,68 @@ class MetaWhatsAppCloud:
         except Exception:  # noqa: BLE001
             logger.exception("Meta send_list_menu exception")
             return False
+
+    def send_reply_buttons(
+        self,
+        *,
+        to: str,
+        body: str,
+        buttons: list[dict[str, str]],
+    ) -> bool:
+        """Send a WhatsApp interactive reply button message.
+
+        `buttons` items must include: {"id": "...", "title": "..."}
+        Max 3 buttons as required by WhatsApp Cloud API.
+        """
+
+        if not self.is_configured():
+            logger.warning(
+                "Meta Cloud API not configured; cannot send interactive buttons (missing META_WA_ACCESS_TOKEN or META_WA_PHONE_NUMBER_ID)"
+            )
+            return False
+
+        if not buttons:
+            logger.error("Meta send_reply_buttons requires at least one button")
+            return False
+
+        if len(buttons) > 3:
+            logger.error("Meta send_reply_buttons supports at most 3 buttons; got %s", len(buttons))
+            return False
+
+        compiled_buttons: list[dict[str, Any]] = []
+        for item in buttons:
+            btn_id = str(item.get("id") or "").strip()
+            title = str(item.get("title") or "").strip()
+            if not btn_id or not title:
+                logger.error("Meta send_reply_buttons button missing id/title: %r", item)
+                return False
+            compiled_buttons.append(
+                {
+                    "type": "reply",
+                    "reply": {"id": btn_id, "title": title},
+                }
+            )
+
+        url = self._endpoint(f"{self._settings.meta_phone_number_id}/messages")
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": body},
+                "action": {
+                    "buttons": compiled_buttons,
+                },
+            },
+        }
+
+        try:
+            resp = self._session().post(url, headers=self._headers(), json=payload, timeout=self._timeout(20))
+            if resp.status_code >= 400:
+                self._log_meta_http_error("send_reply_buttons", resp)
+                return False
+            return True
+        except Exception:  # noqa: BLE001
+            logger.exception("Meta send_reply_buttons exception")
+            return False

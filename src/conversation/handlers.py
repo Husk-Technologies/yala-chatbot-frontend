@@ -15,6 +15,7 @@ class OutgoingMessage:
     media_url: str | None = None
     interactive_menu: bool = False
     guest_name: str | None = None
+    interactive_buttons: list[dict[str, str]] | None = None
     interactive_button_text: str | None = None
     interactive_section_title: str | None = None
     interactive_rows: list[dict[str, str]] | None = None
@@ -78,11 +79,22 @@ def _normalize_choice(text: str) -> str:
 
         "3": "condolence",
         "condolence": "condolence",
+        "condolences": "condolence",
+        "send condolence": "condolence",
+        "send condolences": "condolence",
         "well wish": "condolence",
         "well wishes": "condolence",
+        "well-wishes": "condolence",
+        "wellwish": "condolence",
         "message": "condolence",
         "send message": "condolence",
         "send well wishes": "condolence",
+        "question": "condolence",
+        "feedback": "condolence",
+        "send feedback": "condolence",
+        "enquiry": "condolence",
+        "inquiry": "condolence",
+        "interest": "condolence",
 
         "4": "location",
         "location": "location",
@@ -110,13 +122,142 @@ def _normalize_choice(text: str) -> str:
     return aliases.get(t, t)
 
 
-def _menu_text(guest_name: str) -> str:
+def _event_type_key(event_type: str | None) -> str:
+    t = normalize_text(event_type or "").lower()
+    if t in {"farewell", "connect", "celebrate", "exhibit"}:
+        return t
+    return "default"
+
+
+def _message_menu_label(event_type: str | None) -> str:
+    key = _event_type_key(event_type)
+    labels = {
+        "farewell": "Send Condolence",
+        "connect": "Send Question / Feedback",
+        "celebrate": "Send Well Wishes",
+        "exhibit": "Send Enquiry / Interest",
+        "default": "Send Well Wishes / Message",
+    }
+    return labels[key]
+
+
+def _message_menu_description(event_type: str | None) -> str:
+    key = _event_type_key(event_type)
+    descriptions = {
+        "farewell": "Share a condolence message",
+        "connect": "Ask a question or share feedback",
+        "celebrate": "Share joyful wishes",
+        "exhibit": "Show product interest or enquiry",
+        "default": "Send a message",
+    }
+    return descriptions[key]
+
+
+def _predefined_messages(event_type: str | None) -> list[str]:
+    key = _event_type_key(event_type)
+    by_type: dict[str, list[str]] = {
+        "farewell": [
+            "Please accept my deepest condolences. May your loved one rest in peace.",
+            "My thoughts and prayers are with you and your family during this difficult time.",
+            "Wishing your family comfort, strength, and peace in loving memory.",
+        ],
+        "connect": [
+            "Wishing this conference a successful and impactful session.",
+            "Looking forward to learning, networking, and meaningful conversations.",
+            "Thank you for organizing this event. Wishing all participants a great experience.",
+        ],
+        "celebrate": [
+            "Congratulations on your celebration. Wishing you joy and lifelong happiness.",
+            "May this special occasion be filled with love, laughter, and beautiful memories.",
+            "Sending warm wishes for a wonderful celebration and a blessed future.",
+        ],
+        "exhibit": [
+            "Wishing your exhibition a successful showcase and strong turnout.",
+            "Looking forward to discovering your products and innovations at this event.",
+            "May this exhibit open new opportunities and valuable connections.",
+        ],
+        "default": [
+            "Wishing you all the best for this event.",
+            "Thank you for bringing everyone together for this occasion.",
+            "Sending warm wishes and support.",
+        ],
+    }
+    return by_type[key]
+
+
+def _message_prompt_text(event_type: str | None) -> str:
+    label = _message_menu_label(event_type)
+    return (
+        f"{label}: choose a message option below or type your own message.\n"
+        "(Reply *0* or *back* to return to the menu.)"
+    )
+
+
+_MESSAGE_TEMPLATE_IDS = {
+    "one": "msg_template_1",
+    "two": "msg_template_2",
+    "three": "msg_template_3",
+}
+
+
+def _message_template_buttons(event_type: str | None) -> list[dict[str, str]]:
+    key = _event_type_key(event_type)
+    titles: dict[str, list[str]] = {
+        "farewell": ["Deep Condolence", "Thoughts & Prayers", "Comfort & Peace"],
+        "connect": ["Ask a Question", "Share Feedback", "Great Session"],
+        "celebrate": ["Congratulations", "Joy & Happiness", "Warm Wishes"],
+        "exhibit": ["Product Interest", "Need More Info", "Great Showcase"],
+        "default": ["Template 1", "Template 2", "Template 3"],
+    }
+    selected = titles[key]
+    return [
+        {"id": _MESSAGE_TEMPLATE_IDS["one"], "title": selected[0]},
+        {"id": _MESSAGE_TEMPLATE_IDS["two"], "title": selected[1]},
+        {"id": _MESSAGE_TEMPLATE_IDS["three"], "title": selected[2]},
+    ]
+
+
+def _message_success_text(event_type: str | None) -> str:
+    key = _event_type_key(event_type)
+    by_type = {
+        "farewell": "Your condolence message has been sent.",
+        "connect": "Your question/feedback has been sent.",
+        "celebrate": "Your well wishes have been sent.",
+        "exhibit": "Your enquiry/interest has been sent.",
+        "default": "Your message has been sent.",
+    }
+    return by_type[key]
+
+
+def _resolve_message_input(text: str, event_type: str | None) -> str:
+    templates = _predefined_messages(event_type)
+    value = normalize_text(text)
+    key = value.lower()
+    mapping = {
+        _MESSAGE_TEMPLATE_IDS["one"]: templates[0],
+        _MESSAGE_TEMPLATE_IDS["two"]: templates[1],
+        _MESSAGE_TEMPLATE_IDS["three"]: templates[2],
+        "1": templates[0],
+        "option 1": templates[0],
+        "template 1": templates[0],
+        "2": templates[1],
+        "option 2": templates[1],
+        "template 2": templates[1],
+        "3": templates[2],
+        "option 3": templates[2],
+        "template 3": templates[2],
+    }
+    return mapping.get(key, value)
+
+
+def _menu_text(guest_name: str, event_type: str | None = None) -> str:
+    message_option = _message_menu_label(event_type)
     return (
         f"Thank you, {guest_name}.\n"
         "How can we help you today?\n\n"
         "1. 📄 Download Event Brochure\n"
         "2. 💝 Give / Donate\n"
-        "3. 🕊️ Send Well Wishes / Message\n"
+        f"3. 🕊️ {message_option}\n"
         "4. 📍 Location\n"
         "5. 📷 Photos\n"
         "6. ☎️ Contact Us"
@@ -132,13 +273,6 @@ def _event_intro_text(event_name: str | None) -> str:
     if not name:
         name = "This Event"
     return f"*{name}*"
-
-
-def _condolence_prompt_text() -> str:
-    return (
-        "Please type your well wishes message.\n"
-        "(Reply *0* or *back* to return to the menu.)"
-    )
 
 
 def _photos_prompt_text() -> str:
@@ -279,6 +413,7 @@ def _populate_event_details_for_code(
     code = _normalize_event_code(code_input)
     session.event_code = code
     session.event_id = code
+    session.event_type = None
 
     # Start with the best name we already have (cached > default).
     cached = _cached_event_description(session, code)
@@ -303,6 +438,7 @@ def _populate_event_details_for_code(
     if result.status == "found" and result.event:
         session.event_id = result.event.event_id
         session.event_name = result.event.name
+        session.event_type = result.event.event_type
         session.event_location = result.event.location
         session.event_location_url = result.event.location_url
         _cache_event_description(session, code, result.event.name)
@@ -383,20 +519,23 @@ def handle_incoming_message(
     if choice == "restart":
         # Preserve the event description cache so we don't lose it.
         saved_descriptions = session.event_descriptions
+        saved_event_type = session.event_type
         store.clear(sender_key)
         session = Session(state=ConversationState.WAIT_EVENT_CODE.value, phone_number=phone_number or None)
         session.event_descriptions = saved_descriptions
+        session.event_type = saved_event_type
 
         store.upsert(sender_key, session)
         return OutgoingMessage(text=WELCOME_TEXT)
 
     if choice == "help":
+        option_three_label = _message_menu_label(session.event_type)
         help_text = (
             "You can reply with:\n"
             "- *DEMO* (or your event code) to start\n"
             "- *1* for brochure\n"
             "- *2* to donate\n"
-            "- *3* to send a message\n"
+            f"- *3* to {option_three_label.lower()}\n"
             "- *4* for location\n"
             "- *5* for photos\n"
             "- *6* for contact us\n"
@@ -405,7 +544,7 @@ def handle_incoming_message(
         )
         # If we already have a name, include the menu for convenience.
         if session.guest_name:
-            help_text = help_text + "\n\n" + _menu_text(session.guest_name)
+            help_text = help_text + "\n\n" + _menu_text(session.guest_name, session.event_type)
         return OutgoingMessage(text=help_text)
 
     if session.state == ConversationState.WAIT_EVENT_CODE.value:
@@ -452,7 +591,7 @@ def handle_incoming_message(
                     text=(
                         _event_intro_text(session.event_name)
                         + "\n\n"
-                        + _menu_text(session.guest_name)
+                        + _menu_text(session.guest_name, session.event_type)
                     ),
                     interactive_menu=True,
                     guest_name=session.guest_name,
@@ -499,6 +638,7 @@ def handle_incoming_message(
         session.event_code = code
         session.event_id = result.event.event_id
         session.event_name = result.event.name
+        session.event_type = result.event.event_type
         session.event_location = result.event.location
         session.event_location_url = result.event.location_url
         _cache_event_description(session, code, result.event.name)
@@ -516,7 +656,7 @@ def handle_incoming_message(
                 text=(
                     _event_intro_text(session.event_name)
                     + "\n\n"
-                    + _menu_text(session.guest_name)
+                    + _menu_text(session.guest_name, session.event_type)
                 ),
                 interactive_menu=True,
                 guest_name=session.guest_name,
@@ -581,7 +721,7 @@ def handle_incoming_message(
                 text=(
                     _event_intro_text(session.event_name)
                     + "\n\n"
-                    + _menu_text(session.guest_name)
+                    + _menu_text(session.guest_name, session.event_type)
                 ),
                 interactive_menu=True,
                 guest_name=session.guest_name,
@@ -603,6 +743,7 @@ def handle_incoming_message(
                 session.event_code = None
                 session.event_id = None
                 session.event_name = None
+                session.event_type = None
                 session.event_location = None
                 session.event_location_url = None
                 session.state = ConversationState.WAIT_EVENT_CODE.value
@@ -617,6 +758,7 @@ def handle_incoming_message(
             if result.status == "found" and result.event:
                 session.event_id = result.event.event_id
                 session.event_name = result.event.name
+                session.event_type = result.event.event_type
                 session.event_location = result.event.location
                 session.event_location_url = result.event.location_url
                 _cache_event_description(session, session.event_code, result.event.name)
@@ -632,7 +774,7 @@ def handle_incoming_message(
                     text=(
                         _event_intro_text(session.event_name)
                         + "\n\n"
-                        + _menu_text(session.guest_name)
+                        + _menu_text(session.guest_name, session.event_type)
                     ),
                     interactive_menu=True,
                     guest_name=session.guest_name,
@@ -642,6 +784,7 @@ def handle_incoming_message(
         session.event_code = None
         session.event_id = None
         session.event_name = None
+        session.event_type = None
         session.event_location = None
         session.event_location_url = None
         session.state = ConversationState.WAIT_EVENT_CODE.value
@@ -661,7 +804,7 @@ def handle_incoming_message(
 
         if choice in {"menu", ""}:
             return OutgoingMessage(
-                text=_menu_text(session.guest_name),
+                text=_menu_text(session.guest_name, session.event_type),
                 interactive_menu=True,
                 guest_name=session.guest_name,
             )
@@ -716,7 +859,9 @@ def handle_incoming_message(
                 session.state = ConversationState.WAIT_CONDOLENCE.value
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
-                    text=_condolence_prompt_text(),
+                    text=_message_prompt_text(session.event_type),
+                    interactive_menu=True,
+                    interactive_buttons=_message_template_buttons(session.event_type),
                 )
 
             if choice == "location":
@@ -795,7 +940,7 @@ def handle_incoming_message(
 
         # Unrecognized input (including greetings like "hi") — just show the menu.
         return OutgoingMessage(
-            text=_menu_text(session.guest_name),
+            text=_menu_text(session.guest_name, session.event_type),
             interactive_menu=True,
             guest_name=session.guest_name,
         )
@@ -831,7 +976,7 @@ def handle_incoming_message(
         if choice == "back" or choice == "menu":
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
-            return OutgoingMessage(text=_menu_text(session.guest_name))
+            return OutgoingMessage(text=_menu_text(session.guest_name, session.event_type))
 
         # Parse amount *before* checking menu shortcuts so that numeric inputs
         # like "2" are treated as donation amounts, not menu option numbers.
@@ -923,7 +1068,7 @@ def handle_incoming_message(
             session.state = ConversationState.MENU.value
             session.donation_reference_name = None
             store.upsert(sender_key, session)
-            return OutgoingMessage(text=_menu_text(session.guest_name))
+            return OutgoingMessage(text=_menu_text(session.guest_name, session.event_type))
 
         if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
             session.state = ConversationState.MENU.value
@@ -978,17 +1123,19 @@ def handle_incoming_message(
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return OutgoingMessage(
-                text=_menu_text(session.guest_name),
+                text=_menu_text(session.guest_name, session.event_type),
                 interactive_menu=True,
                 guest_name=session.guest_name,
             )
 
         if normalize_text(text).lower() in {"options", "list", "templates"}:
             return OutgoingMessage(
-                text=_condolence_prompt_text(),
+                text=_message_prompt_text(session.event_type),
+                interactive_menu=True,
+                interactive_buttons=_message_template_buttons(session.event_type),
             )
 
-        message_to_send = normalize_text(text)
+        message_to_send = _resolve_message_input(text, session.event_type)
 
         # Allow menu shortcuts in this state.
         if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
@@ -1004,7 +1151,9 @@ def handle_incoming_message(
 
         if not message_to_send:
             return OutgoingMessage(
-                text=_condolence_prompt_text(),
+                text=_message_prompt_text(session.event_type),
+                interactive_menu=True,
+                interactive_buttons=_message_template_buttons(session.event_type),
             )
 
         result = backend.submit_condolence(
@@ -1036,7 +1185,7 @@ def handle_incoming_message(
             return OutgoingMessage(
                 text=(
                     "Thank you.\n"
-                    "Your message has been sent to the family."
+                    + _message_success_text(session.event_type)
                     + _menu_hint()
                 )
             )
@@ -1062,7 +1211,7 @@ def handle_incoming_message(
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return OutgoingMessage(
-                text=_menu_text(session.guest_name),
+                text=_menu_text(session.guest_name, session.event_type),
                 interactive_menu=True,
                 guest_name=session.guest_name,
             )

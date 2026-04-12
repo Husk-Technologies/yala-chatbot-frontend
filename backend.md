@@ -132,16 +132,51 @@ A 200 OK response with a body like:
 JSON
 
 {
-    "success": true,
-    "message": "Funeral details verified successfully",
-    "description": "Kukua Funeral",
-    "uniqueCode": "DE2021",
-    "guest": [
-        "DE2345",
-        "DE2022",
-        "DE2021"
-    ]
+"success"
+:
+true
+,
+"message"
+:
+"Funeral details verified successfully"
+,
+"description"
+:
+"Kukua Funeral"
+,
+"eventType"
+:
+"farewell"
+ | 
+"connect"
+ | 
+"celebrate"
+ | 
+"exhibit"
+,
+"uniqueCode"
+:
+"DE2021"
+,
+"guest"
+:
+[
+"DE2345"
+,
+"DE2022"
+,
+"DE2021"
+]
 }
+
+Yala farewell - We did too. So we built Yala Farewell. Share memorial programs, track attendance, collect condolences, and manage donations — all inside WhatsApp.
+
+
+Yala Exhibit - Yala Exhibit helps exhibition organizers share floor plans, track attendance, capture leads, and connect exhibitors with attendees.
+
+Yala Connect - Yala Connect helps conference organizers share agendas, register attendance, collect live speaker questions, gather feedback and access venue details.
+
+Yala Celebrate - Yala Celebrate gives wedding videos program, guest attendance, well-wishes, and gifts all on WhatsApp. No printing. No QR codes.
 
 indicates that:
 success is true: the funeral details were verified.

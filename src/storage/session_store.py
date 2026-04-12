@@ -12,6 +12,7 @@ class Session:
     event_code: str | None = None
     event_id: str | None = None
     event_name: str | None = None
+    event_type: str | None = None
     event_location: str | None = None
     event_location_url: str | None = None
     guest_name: str | None = None

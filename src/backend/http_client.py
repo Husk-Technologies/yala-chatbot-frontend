@@ -27,6 +27,15 @@ from .client import (
 
 logger = logging.getLogger(__name__)
 
+_SUPPORTED_EVENT_TYPES = {"farewell", "connect", "celebrate", "exhibit"}
+
+
+def _normalize_event_type(value: Any) -> str | None:
+    t = str(value or "").strip().lower()
+    if not t:
+        return None
+    return t if t in _SUPPORTED_EVENT_TYPES else t
+
 
 @dataclass(frozen=True)
 class HttpBackendConfig:
@@ -225,6 +234,7 @@ class HttpBackendClient(BackendClient):
                     (data.get("uniqueCode") if isinstance(data, dict) else "") or normalized
                 ).strip() or normalized
                 description = str(data.get("description") or "").strip() if isinstance(data, dict) else ""
+                event_type = _normalize_event_type(data.get("eventType")) if isinstance(data, dict) else None
                 display_name = description or self._default_event_name
                 if not description and unique_code and unique_code.lower() not in display_name.lower():
                     display_name = f"{display_name} ({unique_code})"
@@ -239,6 +249,7 @@ class HttpBackendClient(BackendClient):
                         name=display_name,
                         location=self._default_event_location,
                         location_url=self._default_event_location_url,
+                        event_type=event_type,
                     ),
                 )
 
@@ -255,6 +266,7 @@ class HttpBackendClient(BackendClient):
         if data.get("success") is not True:
             desc = str(data.get("description") or "").strip()
             uc = str(data.get("uniqueCode") or normalized).strip() or normalized
+            event_type = _normalize_event_type(data.get("eventType"))
             if desc or data.get("uniqueCode"):
                 display = desc or self._default_event_name
                 if not desc and uc and uc.lower() not in display.lower():
@@ -270,12 +282,14 @@ class HttpBackendClient(BackendClient):
                         name=display,
                         location=self._default_event_location,
                         location_url=self._default_event_location_url,
+                        event_type=event_type,
                     ),
                 )
             return EventLookupResult(status="not_found")
 
         unique_code = str(data.get("uniqueCode") or normalized).strip() or normalized
         description = str(data.get("description") or "").strip()
+        event_type = _normalize_event_type(data.get("eventType"))
         display_name = description or self._default_event_name
         if not description and unique_code and unique_code.lower() not in display_name.lower():
             display_name = f"{display_name} ({unique_code})"
@@ -287,6 +301,7 @@ class HttpBackendClient(BackendClient):
                 name=display_name,
                 location=self._default_event_location,
                 location_url=self._default_event_location_url,
+                event_type=event_type,
             ),
         )
 

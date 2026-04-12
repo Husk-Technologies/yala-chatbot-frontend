@@ -245,31 +245,63 @@ def _extract_meta_messages(payload: dict[str, Any]) -> list[tuple[str, str, str]
     return out
 
 
-def _menu_footer_text(guest_name: str) -> str:
+def _event_type_key(event_type: str | None) -> str:
+    t = (event_type or "").strip().lower()
+    if t in {"farewell", "connect", "celebrate", "exhibit"}:
+        return t
+    return "default"
+
+
+def _message_menu_label(event_type: str | None) -> str:
+    labels = {
+        "farewell": "Send Condolence",
+        "connect": "Send Question / Feedback",
+        "celebrate": "Send Well Wishes",
+        "exhibit": "Send Enquiry / Interest",
+        "default": "Send Well Wishes / Message",
+    }
+    return labels[_event_type_key(event_type)]
+
+
+def _message_menu_description(event_type: str | None) -> str:
+    descriptions = {
+        "farewell": "Share a condolence message",
+        "connect": "Ask a question or share feedback",
+        "celebrate": "Share joyful wishes",
+        "exhibit": "Show product interest or enquiry",
+        "default": "Send a message",
+    }
+    return descriptions[_event_type_key(event_type)]
+
+
+def _menu_footer_text(guest_name: str, event_type: str | None = None) -> str:
+    message_option = _message_menu_label(event_type)
     # Must match the text version used by the conversation handler.
     return (
         f"Thank you, {guest_name}.\n"
         "How can we help you today?\n\n"
         "1. 📄 Download Event Brochure\n"
         "2. 💝 Give / Donate\n"
-        "3. 🕊️ Send Well Wishes / Message\n"
+        f"3. 🕊️ {message_option}\n"
         "4. 📍 Location\n"
         "5. 📷 Photos\n"
         "6. ☎️ Contact Us"
     )
 
 
-_MENU_MARKER = (
-    "\n1. 📄 Download Event Brochure\n"
-    "2. 💝 Give / Donate\n"
-    "3. 🕊️ Send Well Wishes / Message\n"
-    "4. 📍 Location\n"
-    "5. 📷 Photos\n"
-    "6. ☎️ Contact Us"
-)
+def _menu_marker(event_type: str | None = None) -> str:
+    message_option = _message_menu_label(event_type)
+    return (
+        "\n1. 📄 Download Event Brochure\n"
+        "2. 💝 Give / Donate\n"
+        f"3. 🕊️ {message_option}\n"
+        "4. 📍 Location\n"
+        "5. 📷 Photos\n"
+        "6. ☎️ Contact Us"
+    )
 
 
-def _strip_menu_footer(text: str, guest_name: str | None) -> tuple[str, bool]:
+def _strip_menu_footer(text: str, guest_name: str | None, event_type: str | None = None) -> tuple[str, bool]:
     """Remove the trailing text menu from handler output.
 
     Returns (stripped_text, had_menu_footer).
@@ -279,14 +311,16 @@ def _strip_menu_footer(text: str, guest_name: str | None) -> tuple[str, bool]:
 
     # Preferred path: exact footer match when we know the guest name.
     if guest_name:
-        footer = _menu_footer_text(guest_name)
+        footer = _menu_footer_text(guest_name, event_type)
         if t.endswith("\n\n" + footer):
             return t[: -len("\n\n" + footer)].rstrip(), True
         if t.endswith(footer):
             return t[: -len(footer)].rstrip(), True
 
     # Robust fallback: strip from the start of the menu marker.
-    idx = t.rfind(_MENU_MARKER)
+    idx = t.rfind(_menu_marker(event_type))
+    if idx == -1:
+        idx = t.rfind(_menu_marker(None))
     if idx != -1:
         return t[:idx].rstrip(), True
 
@@ -362,15 +396,27 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
             # `OutgoingMessage.guest_name` isn't set for non-menu replies.
             session = SESSION_STORE.get(from_wa)
             guest_name = (session.guest_name if session and session.guest_name else outgoing.guest_name)
+            event_type = session.event_type if session else None
 
             # Strip any accidental trailing menu text from handler output.
-            main_text, had_menu_footer = _strip_menu_footer(outgoing.text, guest_name)
+            main_text, had_menu_footer = _strip_menu_footer(outgoing.text, guest_name, event_type)
 
-            # If we're on Meta and this is an interactive screen, prefer sending an interactive list.
+            # If we're on Meta and this is an interactive screen, prefer
+            # quick reply buttons when present, otherwise use a list menu.
             if outgoing.interactive_menu and not outgoing.media_url:
+                buttons = outgoing.interactive_buttons
                 rows = outgoing.interactive_rows
                 button_text = outgoing.interactive_button_text or "Choose an option"
                 section_title = outgoing.interactive_section_title or "Yala Menu"
+
+                if buttons:
+                    ok = META.send_reply_buttons(
+                        to=from_wa,
+                        body=main_text or "Please choose an option.",
+                        buttons=buttons,
+                    )
+                    if ok:
+                        return
 
                 if rows:
                     body = main_text or "Please choose an option."
@@ -378,7 +424,11 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
                     rows = [
                         {"id": "brochure", "title": "Download Brochure", "description": "Get Event Brochure"},
                         {"id": "donate", "title": "Give / Donate", "description": "Support the Family"},
-                        {"id": "condolence", "title": "Send Well Wishes", "description": "Send a Message"},
+                        {
+                            "id": "condolence",
+                            "title": _message_menu_label(event_type),
+                            "description": _message_menu_description(event_type),
+                        },
                         {"id": "location", "title": "Location", "description": "View Venue Details"},
                         {"id": "photos", "title": "Photos", "description": "Upload or Download Event Photos"},
                         {"id": "contact", "title": "Contact Us", "description": "Call or Visit Our Website"},
