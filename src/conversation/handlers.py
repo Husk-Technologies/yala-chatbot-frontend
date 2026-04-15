@@ -153,7 +153,7 @@ def _message_menu_description(event_type: str | None) -> str:
     return descriptions[key]
 
 
-def _predefined_messages(event_type: str | None) -> list[str]:
+def _predefined_messages(event_type: str | None) -> list[str] | None:
     key = _event_type_key(event_type)
     by_type: dict[str, list[str]] = {
         "farewell": [
@@ -161,34 +161,28 @@ def _predefined_messages(event_type: str | None) -> list[str]:
             "My thoughts and prayers are with you and your family during this difficult time.",
             "Wishing your family comfort, strength, and peace in loving memory.",
         ],
-        "connect": [
-            "Wishing this conference a successful and impactful session.",
-            "Looking forward to learning, networking, and meaningful conversations.",
-            "Thank you for organizing this event. Wishing all participants a great experience.",
-        ],
         "celebrate": [
             "Congratulations on your celebration. Wishing you joy and lifelong happiness.",
             "May this special occasion be filled with love, laughter, and beautiful memories.",
             "Sending warm wishes for a wonderful celebration and a blessed future.",
         ],
-        "exhibit": [
-            "Wishing your exhibition a successful showcase and strong turnout.",
-            "Looking forward to discovering your products and innovations at this event.",
-            "May this exhibit open new opportunities and valuable connections.",
-        ],
-        "default": [
-            "Wishing you all the best for this event.",
-            "Thank you for bringing everyone together for this occasion.",
-            "Sending warm wishes and support.",
-        ],
     }
-    return by_type[key]
+    return by_type.get(key)
+
+
+def _has_predefined_messages(event_type: str | None) -> bool:
+    return _predefined_messages(event_type) is not None
 
 
 def _message_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
+    if _has_predefined_messages(event_type):
+        return (
+            f"{label}: choose a message option below or type your own message.\n"
+            "(Reply *0* or *back* to return to the menu.)"
+        )
     return (
-        f"{label}: choose a message option below or type your own message.\n"
+        f"{label}: please type your message.\n"
         "(Reply *0* or *back* to return to the menu.)"
     )
 
@@ -201,13 +195,13 @@ _MESSAGE_TEMPLATE_IDS = {
 
 
 def _message_template_buttons(event_type: str | None) -> list[dict[str, str]]:
+    if not _has_predefined_messages(event_type):
+        return []
+
     key = _event_type_key(event_type)
     titles: dict[str, list[str]] = {
         "farewell": ["Deep Condolence", "Thoughts & Prayers", "Comfort & Peace"],
-        "connect": ["Ask a Question", "Share Feedback", "Great Session"],
         "celebrate": ["Congratulations", "Joy & Happiness", "Warm Wishes"],
-        "exhibit": ["Product Interest", "Need More Info", "Great Showcase"],
-        "default": ["Template 1", "Template 2", "Template 3"],
     }
     selected = titles[key]
     return [
@@ -230,8 +224,11 @@ def _message_success_text(event_type: str | None) -> str:
 
 
 def _resolve_message_input(text: str, event_type: str | None) -> str:
-    templates = _predefined_messages(event_type)
     value = normalize_text(text)
+    templates = _predefined_messages(event_type)
+    if not templates:
+        return value
+
     key = value.lower()
     mapping = {
         _MESSAGE_TEMPLATE_IDS["one"]: templates[0],
@@ -858,10 +855,11 @@ def handle_incoming_message(
             if choice == "condolence":
                 session.state = ConversationState.WAIT_CONDOLENCE.value
                 store.upsert(sender_key, session)
+                buttons = _message_template_buttons(session.event_type)
                 return OutgoingMessage(
                     text=_message_prompt_text(session.event_type),
-                    interactive_menu=True,
-                    interactive_buttons=_message_template_buttons(session.event_type),
+                    interactive_menu=bool(buttons),
+                    interactive_buttons=buttons or None,
                 )
 
             if choice == "location":
@@ -1129,10 +1127,11 @@ def handle_incoming_message(
             )
 
         if normalize_text(text).lower() in {"options", "list", "templates"}:
+            buttons = _message_template_buttons(session.event_type)
             return OutgoingMessage(
                 text=_message_prompt_text(session.event_type),
-                interactive_menu=True,
-                interactive_buttons=_message_template_buttons(session.event_type),
+                interactive_menu=bool(buttons),
+                interactive_buttons=buttons or None,
             )
 
         message_to_send = _resolve_message_input(text, session.event_type)
@@ -1150,10 +1149,11 @@ def handle_incoming_message(
             )
 
         if not message_to_send:
+            buttons = _message_template_buttons(session.event_type)
             return OutgoingMessage(
                 text=_message_prompt_text(session.event_type),
-                interactive_menu=True,
-                interactive_buttons=_message_template_buttons(session.event_type),
+                interactive_menu=bool(buttons),
+                interactive_buttons=buttons or None,
             )
 
         result = backend.submit_condolence(
