@@ -71,6 +71,8 @@ class RedisSessionStore:
                 donation_reference_name=data.get("donation_reference_name"),
                 backend_token=data.get("backend_token"),
                 funeral_unique_codes=data.get("funeral_unique_codes"),
+                ai_draft_text=data.get("ai_draft_text"),
+                ai_draft_kind=data.get("ai_draft_kind"),
                 event_descriptions=data.get("event_descriptions"),
                 updated_at=float(data.get("updated_at") or 0.0),
             )

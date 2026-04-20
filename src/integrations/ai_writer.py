@@ -26,6 +26,7 @@ class AIMessageWriter(Protocol):
         event_type: str,
         event_name: str | None = None,
         guest_name: str | None = None,
+        prompt: str | None = None,
     ) -> AITextResult: ...
 
     def enhance_message(self, *, event_type: str, draft: str) -> AITextResult: ...
@@ -132,6 +133,7 @@ class OpenAIMessageWriter:
         event_type: str,
         event_name: str | None = None,
         guest_name: str | None = None,
+        prompt: str | None = None,
     ) -> AITextResult:
         t = (event_type or "").strip().lower()
         if t not in {"farewell", "celebrate"}:
@@ -140,14 +142,22 @@ class OpenAIMessageWriter:
         style = "condolence" if t == "farewell" else "well-wish"
         event_text = (event_name or "this event").strip()
         sender_text = (guest_name or "a guest").strip()
+        guidance = (prompt or "").strip()
         system_prompt = (
             "You write short WhatsApp-ready messages. "
             "Return plain text only, no quotes, no numbering, no markdown."
         )
-        user_prompt = (
-            f"Generate one {style} message for {event_text} from {sender_text}. "
-            "Keep it sincere, culturally neutral, and 1-2 sentences."
-        )
+        if guidance:
+            user_prompt = (
+                f"Generate one {style} message for {event_text} from {sender_text}. "
+                f"User guidance: {guidance}. "
+                "Keep it sincere, culturally neutral, and 1-2 sentences."
+            )
+        else:
+            user_prompt = (
+                f"Generate one {style} message for {event_text} from {sender_text}. "
+                "Keep it sincere, culturally neutral, and 1-2 sentences."
+            )
         return self._complete(system_prompt=system_prompt, user_prompt=user_prompt, temperature=0.8)
 
     def enhance_message(self, *, event_type: str, draft: str) -> AITextResult:

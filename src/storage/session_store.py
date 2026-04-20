@@ -20,6 +20,8 @@ class Session:
     donation_reference_name: str | None = None
     backend_token: str | None = None
     funeral_unique_codes: list[str] | None = None
+    ai_draft_text: str | None = None
+    ai_draft_kind: str | None = None
     # Cache: maps event code -> description so we never lose it across lookups.
     event_descriptions: dict[str, str] | None = None
 

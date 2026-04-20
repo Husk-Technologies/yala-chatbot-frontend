@@ -9,7 +9,9 @@ class ConversationState(str, Enum):
     MENU = "menu"
     WAIT_PHOTOS_MENU = "wait_photos_menu"
     WAIT_CONDOLENCE = "wait_condolence"
+    WAIT_AI_GENERATE_INPUT = "wait_ai_generate_input"
     WAIT_AI_ENHANCE_INPUT = "wait_ai_enhance_input"
+    WAIT_AI_DRAFT_REVIEW = "wait_ai_draft_review"
     WAIT_DONATION_REFERENCE = "wait_donation_reference"
     WAIT_DONATION_AMOUNT = "wait_donation_amount"
 

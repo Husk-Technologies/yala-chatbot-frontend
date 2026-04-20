@@ -110,6 +110,15 @@ def _normalize_choice(text: str) -> str:
         "ai enhance": "ai_enhance",
         "enhance": "ai_enhance",
         "enhance message": "ai_enhance",
+        "enhance my message": "ai_enhance",
+        "send": "ai_send_draft",
+        "send draft": "ai_send_draft",
+        "use draft": "ai_send_draft",
+        "try again": "ai_retry_draft",
+        "retry": "ai_retry_draft",
+        "edit": "ai_retry_draft",
+        "cancel": "ai_cancel_draft",
+        "discard": "ai_cancel_draft",
 
         "4": "location",
         "location": "location",
@@ -249,11 +258,56 @@ def _ai_enhance_prompt_text(event_type: str | None) -> str:
     )
 
 
+def _ai_generate_prompt_text(event_type: str | None) -> str:
+    label = _message_menu_label(event_type)
+    return (
+        f"{label}: tell AI what you want the message to say.\n"
+        "For example, you can describe the tone or details you want.\n"
+        "(Reply *0* or *back* to return to the menu.)"
+    )
+
+
+def _ai_review_text(event_type: str | None, kind: str | None, draft: str) -> str:
+    label = _message_menu_label(event_type)
+    prefix = "Your AI-generated draft" if kind == "ai_generated" else "Your AI-enhanced draft"
+    return (
+        f"{label}: {prefix} is ready. Review it below, then choose what to do next.\n\n"
+        f"{draft}\n\n"
+        "You can send it, try again, or cancel."
+    )
+
+
+_AI_REVIEW_SEND_ID = "ai_send_draft"
+_AI_REVIEW_RETRY_ID = "ai_retry_draft"
+_AI_REVIEW_CANCEL_ID = "ai_cancel_draft"
+
+
 def _ai_unavailable_text() -> str:
     return (
         "AI assistant is not available right now. "
         "Please type your message directly."
     )
+
+
+def _clear_ai_draft(session: Session) -> None:
+    session.ai_draft_text = None
+    session.ai_draft_kind = None
+
+
+def _ai_review_buttons() -> list[dict[str, str]]:
+    return [
+        {"id": _AI_REVIEW_SEND_ID, "title": "Send"},
+        {"id": _AI_REVIEW_RETRY_ID, "title": "Try Again"},
+        {"id": _AI_REVIEW_CANCEL_ID, "title": "Cancel"},
+    ]
+
+
+def _ai_review_rows() -> list[dict[str, str]]:
+    return [
+        {"id": _AI_REVIEW_SEND_ID, "title": "Send", "description": "Send this draft"},
+        {"id": _AI_REVIEW_RETRY_ID, "title": "Try Again", "description": "Generate a new draft"},
+        {"id": _AI_REVIEW_CANCEL_ID, "title": "Cancel", "description": "Return to the main menu"},
+    ]
 
 
 def _message_submission_kind(event_type: str | None) -> str:
@@ -730,7 +784,7 @@ def _submit_event_message(
             token=session.backend_token,
         )
 
-    def _submit_with_compat_fallback(initial_type: str) -> tuple[object, str]:
+    def _submit_with_compat_fallback(initial_type: str):
         result = _submit_once(initial_type)
         if initial_type in {"ai_generated", "ai_enhanced"} and result.status in {"error", "unavailable"}:
             if _looks_like_auth_error(result.error):
@@ -1484,78 +1538,11 @@ def handle_incoming_message(
                     )
                 )
 
-            if ai_writer is None:
-                rows = _message_option_rows(session.event_type)
-                return OutgoingMessage(
-                    text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
-                    interactive_menu=bool(rows),
-                    interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
-                    interactive_section_title=_message_menu_label(session.event_type),
-                    interactive_rows=rows or None,
-                )
-
-            ai_result = ai_writer.generate_message(
-                event_type=_event_type_key(session.event_type),
-                event_name=session.event_name,
-                guest_name=session.guest_name,
-            )
-            if ai_result.status == "unavailable":
-                rows = _message_option_rows(session.event_type)
-                return OutgoingMessage(
-                    text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
-                    interactive_menu=bool(rows),
-                    interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
-                    interactive_section_title=_message_menu_label(session.event_type),
-                    interactive_rows=rows or None,
-                )
-
-            if ai_result.status != "ready" or not ai_result.text:
-                rows = _message_option_rows(session.event_type)
-                err = ai_result.error or "We could not generate a message right now"
-                return OutgoingMessage(
-                    text=(f"Sorry, {err}.\n\n" + _message_prompt_text(session.event_type)),
-                    interactive_menu=bool(rows),
-                    interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
-                    interactive_section_title=_message_menu_label(session.event_type),
-                    interactive_rows=rows or None,
-                )
-
-            message_to_send = normalize_text(ai_result.text)
-            result = _submit_event_message(
-                backend=backend,
-                session=session,
-                sender_key=sender_key,
-                phone_number=phone_number,
-                store=store,
-                message_text=message_to_send,
-                message_type="ai_generated",
-            )
-
-            session.state = ConversationState.MENU.value
+            session.ai_draft_kind = "ai_generated"
+            session.ai_draft_text = None
+            session.state = ConversationState.WAIT_AI_GENERATE_INPUT.value
             store.upsert(sender_key, session)
-
-            if result.status == "ok":
-                return OutgoingMessage(
-                    text=(
-                        "Thank you.\n"
-                        "Your AI-generated message has been sent.\n\n"
-                        f"Message sent:\n{message_to_send}"
-                        + _menu_hint()
-                    )
-                )
-
-            if result.status == "unavailable":
-                return OutgoingMessage(
-                    text=(_submission_unavailable_text(session.event_type, result.error) + _menu_hint())
-                )
-
-            return OutgoingMessage(
-                text=(
-                    "Sorry, we couldn’t send your AI-generated message right now.\n"
-                    "Please try again later."
-                    + _menu_hint()
-                )
-            )
+            return OutgoingMessage(text=_ai_generate_prompt_text(session.event_type))
 
         if choice in {"ai_enhance", _MESSAGE_AI_ENHANCE_ID}:
             session.state = ConversationState.WAIT_AI_ENHANCE_INPUT.value
@@ -1609,6 +1596,88 @@ def handle_incoming_message(
             )
         )
 
+    if session.state == ConversationState.WAIT_AI_GENERATE_INPUT.value:
+        if not session.guest_name or not session.event_id:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
+
+        if not session.guest_id:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=(
+                    "We couldn’t identify your guest profile.\n"
+                    "Please type *restart* and try again."
+                    + _menu_hint()
+                )
+            )
+
+        if choice in {"back", "menu"}:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=_menu_text(session.guest_name, session.event_type),
+                interactive_menu=True,
+                guest_name=session.guest_name,
+            )
+
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            return handle_incoming_message(
+                sender_key=sender_key,
+                incoming_text=choice,
+                store=store,
+                backend=backend,
+                settings=settings,
+                ai_writer=ai_writer,
+            )
+
+        if not text:
+            return OutgoingMessage(text=_ai_generate_prompt_text(session.event_type))
+
+        if ai_writer is None:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            rows = _message_option_rows(session.event_type)
+            return OutgoingMessage(
+                text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
+                interactive_menu=bool(rows),
+                interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
+                interactive_section_title=_message_menu_label(session.event_type),
+                interactive_rows=rows or None,
+            )
+
+        prompt = normalize_text(text)
+        ai_result = ai_writer.generate_message(
+            event_type=_event_type_key(session.event_type),
+            event_name=session.event_name,
+            guest_name=session.guest_name,
+            prompt=prompt,
+        )
+        if ai_result.status != "ready" or not ai_result.text:
+            err = ai_result.error or "We could not generate a message right now"
+            return OutgoingMessage(text=f"Sorry, {err}.\n\n" + _ai_generate_prompt_text(session.event_type))
+
+        draft = normalize_text(ai_result.text)
+        session.ai_draft_text = draft
+        session.ai_draft_kind = "ai_generated"
+        session.state = ConversationState.WAIT_AI_DRAFT_REVIEW.value
+        store.upsert(sender_key, session)
+        return OutgoingMessage(
+            text=_ai_review_text(session.event_type, session.ai_draft_kind, draft),
+            interactive_menu=True,
+            interactive_button_text="Choose action",
+            interactive_buttons=_ai_review_buttons(),
+            interactive_rows=_ai_review_rows(),
+        )
+
     if session.state == ConversationState.WAIT_AI_ENHANCE_INPUT.value:
         if not session.guest_name or not session.event_id:
             session.state = ConversationState.MENU.value
@@ -1628,6 +1697,7 @@ def handle_incoming_message(
 
         if choice in {"back", "menu"}:
             session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
             store.upsert(sender_key, session)
             return OutgoingMessage(
                 text=_menu_text(session.guest_name, session.event_type),
@@ -1637,6 +1707,7 @@ def handle_incoming_message(
 
         if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
             session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
             store.upsert(sender_key, session)
             return handle_incoming_message(
                 sender_key=sender_key,
@@ -1669,7 +1740,8 @@ def handle_incoming_message(
             return OutgoingMessage(text=_ai_enhance_prompt_text(session.event_type))
 
         if ai_writer is None:
-            session.state = ConversationState.WAIT_CONDOLENCE.value
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
             store.upsert(sender_key, session)
             rows = _message_option_rows(session.event_type)
             return OutgoingMessage(
@@ -1683,7 +1755,8 @@ def handle_incoming_message(
         draft = normalize_text(text)
         ai_result = ai_writer.enhance_message(event_type=_event_type_key(session.event_type), draft=draft)
         if ai_result.status == "unavailable":
-            session.state = ConversationState.WAIT_CONDOLENCE.value
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
             store.upsert(sender_key, session)
             rows = _message_option_rows(session.event_type)
             return OutgoingMessage(
@@ -1699,25 +1772,103 @@ def handle_incoming_message(
             return OutgoingMessage(text=f"Sorry, {err}.\n\n" + _ai_enhance_prompt_text(session.event_type))
 
         enhanced_message = normalize_text(ai_result.text)
+        session.ai_draft_text = enhanced_message
+        session.ai_draft_kind = "ai_enhanced"
+        session.state = ConversationState.WAIT_AI_DRAFT_REVIEW.value
+        store.upsert(sender_key, session)
+        return OutgoingMessage(
+            text=_ai_review_text(session.event_type, session.ai_draft_kind, enhanced_message),
+            interactive_menu=True,
+            interactive_button_text="Choose action",
+            interactive_buttons=_ai_review_buttons(),
+            interactive_rows=_ai_review_rows(),
+        )
+
+    if session.state == ConversationState.WAIT_AI_DRAFT_REVIEW.value:
+        if not session.guest_name or not session.event_id:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
+
+        if not session.guest_id:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=(
+                    "We couldn’t identify your guest profile.\n"
+                    "Please type *restart* and try again."
+                    + _menu_hint()
+                )
+            )
+
+        if choice in {"back", "menu", _AI_REVIEW_CANCEL_ID, "cancel", "discard"}:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=_menu_text(session.guest_name, session.event_type),
+                interactive_menu=True,
+                guest_name=session.guest_name,
+            )
+
+        if choice in {_AI_REVIEW_RETRY_ID, "retry", "edit", "try again"}:
+            kind = session.ai_draft_kind or "ai_generated"
+            session.ai_draft_text = None
+            session.state = (
+                ConversationState.WAIT_AI_ENHANCE_INPUT.value
+                if kind == "ai_enhanced"
+                else ConversationState.WAIT_AI_GENERATE_INPUT.value
+            )
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=(
+                    _ai_enhance_prompt_text(session.event_type)
+                    if kind == "ai_enhanced"
+                    else _ai_generate_prompt_text(session.event_type)
+                )
+            )
+
+        if choice not in {_AI_REVIEW_SEND_ID, "send", "send draft", "use draft"}:
+            draft_text = session.ai_draft_text or ""
+            return OutgoingMessage(
+                text=_ai_review_text(session.event_type, session.ai_draft_kind, draft_text),
+                interactive_menu=True,
+                interactive_button_text="Choose action",
+                interactive_buttons=_ai_review_buttons(),
+                interactive_rows=_ai_review_rows(),
+            )
+
+        draft_text = normalize_text(session.ai_draft_text or "")
+        if not draft_text:
+            session.state = ConversationState.MENU.value
+            _clear_ai_draft(session)
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Your AI draft is no longer available. Please try again." + _menu_hint())
+
+        submit_type = session.ai_draft_kind or "ai_generated"
         result = _submit_event_message(
             backend=backend,
             session=session,
             sender_key=sender_key,
             phone_number=phone_number,
             store=store,
-            message_text=enhanced_message,
-            message_type="ai_enhanced",
+            message_text=draft_text,
+            message_type=submit_type,
         )
 
         session.state = ConversationState.MENU.value
+        _clear_ai_draft(session)
         store.upsert(sender_key, session)
 
         if result.status == "ok":
+            sent_label = "AI-generated" if submit_type == "ai_generated" else "AI-enhanced"
             return OutgoingMessage(
                 text=(
                     "Thank you.\n"
-                    "Your AI-enhanced message has been sent.\n\n"
-                    f"Message sent:\n{enhanced_message}"
+                    f"Your {sent_label} message has been sent.\n\n"
+                    f"Message sent:\n{draft_text}"
                     + _menu_hint()
                 )
             )
@@ -1729,7 +1880,7 @@ def handle_incoming_message(
 
         return OutgoingMessage(
             text=(
-                "Sorry, we couldn’t send your AI-enhanced message right now.\n"
+                "Sorry, we couldn’t send your drafted message right now.\n"
                 "Please try again later."
                 + _menu_hint()
             )
