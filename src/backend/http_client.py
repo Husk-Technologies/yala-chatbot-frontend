@@ -413,7 +413,7 @@ class HttpBackendClient(BackendClient):
         event_id: str,
         guest_id: str,
         message: str,
-        message_type: str | None = "defined",
+        message_type: str | None = "define",
         token: str | None = None,
     ) -> SubmitResult:
         funeral_code = (event_id or "").strip()
@@ -421,9 +421,16 @@ class HttpBackendClient(BackendClient):
         msg = (message or "").strip()
         msg_type = None
         if message_type is not None:
-            msg_type = (message_type or "defined").strip().lower().replace(" ", "_")
-            if msg_type not in {"defined", "predefined", "ai_generated", "ai_enhanced"}:
-                msg_type = "defined"
+            msg_type = (message_type or "define").strip().lower().replace(" ", "_")
+            aliases = {
+                "defined": "define",
+                "predefined": "predefine",
+                "ai_generated": "predefine",
+                "ai_enhanced": "define",
+            }
+            msg_type = aliases.get(msg_type, msg_type)
+            if msg_type not in {"define", "predefine"}:
+                msg_type = "define"
         if not funeral_code or not guest_id_norm or not msg:
             return SubmitResult(status="error", error="Missing required fields")
 

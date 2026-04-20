@@ -112,7 +112,7 @@ class BackendClient(Protocol):
         event_id: str,
         guest_id: str,
         message: str,
-        message_type: str | None = "defined",
+        message_type: str | None = "define",
         token: str | None = None,
     ) -> SubmitResult: ...
 

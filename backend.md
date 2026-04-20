@@ -299,7 +299,7 @@ JSON
     "funeralUniqueCode":"DE2022",
     "guestId":"6975a5dca73dfa0d03945fd6",
     "message":"Sorry for your lost my dear Kwesi.",
-    "messageType":"defined" | "predefined",
+    "messageType":"define" | "predefine",
 }
 
 

@@ -506,8 +506,8 @@ def _resolve_message_input(text: str, event_type: str | None) -> tuple[str, str]
         or mapping.get(key_compact_first_line)
     )
     if resolved:
-        return resolved, "predefined"
-    return value, "defined"
+        return resolved, "predefine"
+    return value, "define"
 
 
 def _menu_text(guest_name: str, event_type: str | None = None) -> str:
@@ -790,9 +790,9 @@ def _submit_event_message(
             if _looks_like_auth_error(result.error):
                 return result, initial_type
 
-            fallback_types = ["predefined", "defined"]
+            fallback_types = ["predefine", "define"]
             if initial_type == "ai_enhanced":
-                fallback_types = ["defined", "predefined"]
+                fallback_types = ["define", "predefine"]
 
             for fallback_type in fallback_types:
                 if fallback_type == initial_type:
@@ -839,7 +839,7 @@ def _submit_event_message(
         and result.status in {"error", "unavailable"}
         and _looks_like_message_type_compat_error(result.error)
     ):
-        for fallback_type in (["predefined", "defined"] if message_type == "ai_generated" else ["defined", "predefined"]):
+        for fallback_type in (["predefine", "define"] if message_type == "ai_generated" else ["define", "predefine"]):
             fallback_result = _submit_once(fallback_type)
             if fallback_result.status == "ok":
                 result = fallback_result
@@ -1860,7 +1860,7 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text="Your AI draft is no longer available. Please try again." + _menu_hint())
 
-        submit_type = "predefined"
+        submit_type = "predefine" if session.ai_draft_kind == "ai_generated" else "define"
         result = _submit_event_message(
             backend=backend,
             session=session,
