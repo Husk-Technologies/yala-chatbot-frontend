@@ -804,6 +804,19 @@ def _submit_event_message(
                     # If the backend explicitly disables messages, stop trying.
                     return fallback_result, fallback_type
                 result = fallback_result
+
+            # Final compatibility fallback: some backend deployments reject the
+            # messageType field entirely, even when the payload otherwise matches.
+            fallback_result = backend.submit_condolence(
+                session.event_id,
+                session.guest_id,
+                message_text,
+                message_type=None,
+                token=session.backend_token,
+            )
+            if fallback_result.status == "ok":
+                return fallback_result, ""
+            result = fallback_result
         return result, initial_type
 
     result, used_message_type = _submit_with_compat_fallback(message_type)
