@@ -53,6 +53,10 @@ def _normalize_choice(text: str) -> str:
     if not t:
         return ""
 
+    first_line = t.splitlines()[0].strip() if "\n" in t else t
+    compact = " ".join(t.split())
+    compact_first_line = " ".join(first_line.split())
+
     aliases: dict[str, str] = {
         "0": "menu",
         "o": "menu",
@@ -130,7 +134,15 @@ def _normalize_choice(text: str) -> str:
         "customer care": "contact",
     }
 
-    return aliases.get(t, t)
+    if t in aliases:
+        return aliases[t]
+    if first_line in aliases:
+        return aliases[first_line]
+    if compact in aliases:
+        return aliases[compact]
+    if compact_first_line in aliases:
+        return aliases[compact_first_line]
+    return first_line or t
 
 
 def _event_type_key(event_type: str | None) -> str:
@@ -403,6 +415,9 @@ def _resolve_message_input(text: str, event_type: str | None) -> tuple[str, str]
         return value, "defined"
 
     key = value.lower()
+    key_first_line = key.splitlines()[0].strip() if "\n" in key else key
+    key_compact = " ".join(key.split())
+    key_compact_first_line = " ".join(key_first_line.split())
     mapping = {
         _MESSAGE_TEMPLATE_IDS["one"]: templates[0],
         _MESSAGE_TEMPLATE_IDS["two"]: templates[1],
@@ -430,7 +445,12 @@ def _resolve_message_input(text: str, event_type: str | None) -> tuple[str, str]
         if alt_key and alt_key != title_key:
             mapping[alt_key] = templates[idx]
 
-    resolved = mapping.get(key)
+    resolved = (
+        mapping.get(key)
+        or mapping.get(key_first_line)
+        or mapping.get(key_compact)
+        or mapping.get(key_compact_first_line)
+    )
     if resolved:
         return resolved, "predefined"
     return value, "defined"
