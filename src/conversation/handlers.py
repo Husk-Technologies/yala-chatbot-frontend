@@ -5,7 +5,7 @@ from datetime import datetime
 
 from ..backend.client import BackendClient
 from ..config import Settings
-from ..integrations.ai_writer import AIMessageWriter
+from ..integrations.ai_writer import AIMessageWriter, OpenAIMessageWriter
 from ..storage.session_store import Session, SessionStore
 from .state import ConversationState, normalize_text
 
@@ -251,7 +251,90 @@ def _ai_enhance_prompt_text(event_type: str | None) -> str:
 
 
 def _ai_unavailable_text() -> str:
-    return "AI assistant is not available right now. Please type your message directly."
+    return (
+        "AI assistant is not available right now. "
+        "Please type your message directly."
+    )
+
+
+def _message_submission_kind(event_type: str | None) -> str:
+    key = _event_type_key(event_type)
+    kinds = {
+        "farewell": "condolence message",
+        "connect": "question/feedback message",
+        "celebrate": "well wishes message",
+        "exhibit": "enquiry/interest message",
+        "default": "message",
+    }
+    return kinds[key]
+
+
+def _message_disabled_text(event_type: str | None) -> str:
+    key = _event_type_key(event_type)
+    by_type = {
+        "farewell": "Condolence messages are disabled for this event.",
+        "connect": "Question/feedback messages are disabled for this event.",
+        "celebrate": "Well wishes messages are disabled for this event.",
+        "exhibit": "Enquiry/interest messages are disabled for this event.",
+        "default": "Messages are disabled for this event.",
+    }
+    return by_type[key]
+
+
+def _submission_unavailable_text(event_type: str | None, backend_error: str | None) -> str:
+    fallback = _message_disabled_text(event_type)
+    if not backend_error:
+        return fallback
+
+    message = normalize_text(backend_error)
+    low = message.lower()
+
+    # Avoid exposing backend wording that says "condolence" for non-farewell flows.
+    if "condolence" in low and _event_type_key(event_type) != "farewell":
+        if "disabled" in low:
+            return fallback
+        if "an error occurred while submitting" in low:
+            return f"An error occurred while submitting your {_message_submission_kind(event_type)}."
+        return f"We couldn't submit your {_message_submission_kind(event_type)} right now."
+
+    if "disabled" in low and "message" in low:
+        return fallback
+
+    if "an error occurred while submitting" in low and "message" in low:
+        return f"An error occurred while submitting your {_message_submission_kind(event_type)}."
+
+    return message
+
+
+def _resolve_ai_writer(ai_writer: AIMessageWriter | None, settings: Settings) -> AIMessageWriter | None:
+    if ai_writer is not None:
+        checker = getattr(ai_writer, "is_configured", None)
+        if callable(checker):
+            try:
+                if bool(checker()):
+                    return ai_writer
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            # Custom writer implementations may not expose is_configured.
+            return ai_writer
+
+    fallback = OpenAIMessageWriter(settings)
+    if fallback.is_configured():
+        return fallback
+
+    # Safety net for call paths that use Settings() without pre-loading .env.
+    try:
+        from dotenv import find_dotenv, load_dotenv
+
+        load_dotenv(find_dotenv(), override=False)
+        refreshed = OpenAIMessageWriter(Settings())
+        if refreshed.is_configured():
+            return refreshed
+    except Exception:  # noqa: BLE001
+        pass
+
+    return None
 
 
 _MESSAGE_TEMPLATE_IDS = {
@@ -653,6 +736,7 @@ def handle_incoming_message(
     settings: Settings,
     ai_writer: AIMessageWriter | None = None,
 ) -> OutgoingMessage:
+    ai_writer = _resolve_ai_writer(ai_writer, settings)
     text = normalize_text(incoming_text)
     choice = _normalize_choice(text)
     phone_number = _normalize_phone(sender_key)
@@ -1358,6 +1442,16 @@ def handle_incoming_message(
                 event_name=session.event_name,
                 guest_name=session.guest_name,
             )
+            if ai_result.status == "unavailable":
+                rows = _message_option_rows(session.event_type)
+                return OutgoingMessage(
+                    text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
+                    interactive_menu=bool(rows),
+                    interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
+                    interactive_section_title=_message_menu_label(session.event_type),
+                    interactive_rows=rows or None,
+                )
+
             if ai_result.status != "ready" or not ai_result.text:
                 rows = _message_option_rows(session.event_type)
                 err = ai_result.error or "We could not generate a message right now"
@@ -1394,7 +1488,9 @@ def handle_incoming_message(
                 )
 
             if result.status == "unavailable":
-                return OutgoingMessage(text=(result.error or "Well wishes messages are disabled for this funeral.") + _menu_hint())
+                return OutgoingMessage(
+                    text=(_submission_unavailable_text(session.event_type, result.error) + _menu_hint())
+                )
 
             return OutgoingMessage(
                 text=(
@@ -1444,7 +1540,9 @@ def handle_incoming_message(
             )
 
         if result.status == "unavailable":
-            return OutgoingMessage(text=(result.error or "Well wishes messages are disabled for this funeral.") + _menu_hint())
+            return OutgoingMessage(
+                text=(_submission_unavailable_text(session.event_type, result.error) + _menu_hint())
+            )
 
         return OutgoingMessage(
             text=(
@@ -1527,6 +1625,18 @@ def handle_incoming_message(
 
         draft = normalize_text(text)
         ai_result = ai_writer.enhance_message(event_type=_event_type_key(session.event_type), draft=draft)
+        if ai_result.status == "unavailable":
+            session.state = ConversationState.WAIT_CONDOLENCE.value
+            store.upsert(sender_key, session)
+            rows = _message_option_rows(session.event_type)
+            return OutgoingMessage(
+                text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
+                interactive_menu=bool(rows),
+                interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
+                interactive_section_title=_message_menu_label(session.event_type),
+                interactive_rows=rows or None,
+            )
+
         if ai_result.status != "ready" or not ai_result.text:
             err = ai_result.error or "We could not enhance your message right now"
             return OutgoingMessage(text=f"Sorry, {err}.\n\n" + _ai_enhance_prompt_text(session.event_type))
@@ -1556,7 +1666,9 @@ def handle_incoming_message(
             )
 
         if result.status == "unavailable":
-            return OutgoingMessage(text=(result.error or "Well wishes messages are disabled for this funeral.") + _menu_hint())
+            return OutgoingMessage(
+                text=(_submission_unavailable_text(session.event_type, result.error) + _menu_hint())
+            )
 
         return OutgoingMessage(
             text=(
