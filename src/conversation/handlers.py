@@ -1860,7 +1860,7 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text="Your AI draft is no longer available. Please try again." + _menu_hint())
 
-        submit_type = session.ai_draft_kind or "ai_generated"
+        submit_type = "predefined"
         result = _submit_event_message(
             backend=backend,
             session=session,
@@ -1876,7 +1876,7 @@ def handle_incoming_message(
         store.upsert(sender_key, session)
 
         if result.status == "ok":
-            sent_label = "AI-generated" if submit_type == "ai_generated" else "AI-enhanced"
+            sent_label = "AI-generated" if session.ai_draft_kind == "ai_generated" else "AI-enhanced"
             return OutgoingMessage(
                 text=(
                     "Thank you.\n"
