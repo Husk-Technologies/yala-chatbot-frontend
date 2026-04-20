@@ -730,7 +730,29 @@ def _submit_event_message(
             token=session.backend_token,
         )
 
-    result = _submit_once(message_type)
+    def _submit_with_compat_fallback(initial_type: str) -> tuple[object, str]:
+        result = _submit_once(initial_type)
+        if initial_type in {"ai_generated", "ai_enhanced"} and result.status in {"error", "unavailable"}:
+            if _looks_like_auth_error(result.error):
+                return result, initial_type
+
+            fallback_types = ["predefined", "defined"]
+            if initial_type == "ai_enhanced":
+                fallback_types = ["defined", "predefined"]
+
+            for fallback_type in fallback_types:
+                if fallback_type == initial_type:
+                    continue
+                fallback_result = _submit_once(fallback_type)
+                if fallback_result.status == "ok":
+                    return fallback_result, fallback_type
+                if fallback_result.status == "unavailable":
+                    # If the backend explicitly disables messages, stop trying.
+                    return fallback_result, fallback_type
+                result = fallback_result
+        return result, initial_type
+
+    result, used_message_type = _submit_with_compat_fallback(message_type)
 
     if result.status == "error" and _looks_like_auth_error(result.error):
         if _refresh_guest_auth_if_possible(
@@ -740,24 +762,24 @@ def _submit_event_message(
             phone_number=phone_number,
             store=store,
         ):
-            result = _submit_once(message_type)
+            result, used_message_type = _submit_with_compat_fallback(message_type)
 
-    # Backward-compat fallback: some backends still only accept defined/predefined.
+    # Last-chance fallback: if AI message typing is the likely reason for failure,
+    # retry the compatibility path once more after auth refresh handling.
     if (
         message_type in {"ai_generated", "ai_enhanced"}
+        and used_message_type == message_type
         and result.status in {"error", "unavailable"}
         and _looks_like_message_type_compat_error(result.error)
     ):
-        result = _submit_once("defined")
-        if result.status == "error" and _looks_like_auth_error(result.error):
-            if _refresh_guest_auth_if_possible(
-                backend=backend,
-                sender_key=sender_key,
-                session=session,
-                phone_number=phone_number,
-                store=store,
-            ):
-                result = _submit_once("defined")
+        for fallback_type in (["predefined", "defined"] if message_type == "ai_generated" else ["defined", "predefined"]):
+            fallback_result = _submit_once(fallback_type)
+            if fallback_result.status == "ok":
+                result = fallback_result
+                break
+            if fallback_result.status == "unavailable":
+                result = fallback_result
+                break
 
     return result
 
