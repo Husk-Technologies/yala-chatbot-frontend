@@ -5,6 +5,7 @@ from datetime import datetime
 
 from ..backend.client import BackendClient
 from ..config import Settings
+from ..integrations.ai_writer import AIMessageWriter
 from ..storage.session_store import Session, SessionStore
 from .state import ConversationState, normalize_text
 
@@ -67,6 +68,9 @@ def _normalize_choice(text: str) -> str:
 
         "1": "brochure",
         "brochure": "brochure",
+        "outline": "brochure",
+        "program outline": "brochure",
+        "get program outline": "brochure",
         "download": "brochure",
         "pdf": "brochure",
         "program": "brochure",
@@ -95,6 +99,13 @@ def _normalize_choice(text: str) -> str:
         "enquiry": "condolence",
         "inquiry": "condolence",
         "interest": "condolence",
+        "ai generate": "ai_generate",
+        "generate with ai": "ai_generate",
+        "ai condolence": "ai_generate",
+        "ai well wishes": "ai_generate",
+        "ai enhance": "ai_enhance",
+        "enhance": "ai_enhance",
+        "enhance message": "ai_enhance",
 
         "4": "location",
         "location": "location",
@@ -129,6 +140,26 @@ def _event_type_key(event_type: str | None) -> str:
     return "default"
 
 
+def _supports_donations(event_type: str | None) -> bool:
+    return _event_type_key(event_type) not in {"connect", "exhibit"}
+
+
+def _supports_photos(event_type: str | None) -> bool:
+    return _event_type_key(event_type) not in {"connect", "exhibit"}
+
+
+def _brochure_menu_label(event_type: str | None) -> str:
+    if _event_type_key(event_type) in {"connect", "exhibit"}:
+        return "Get Program Outline"
+    return "Download Event Brochure"
+
+
+def _brochure_ready_text(event_type: str | None) -> str:
+    if _event_type_key(event_type) in {"connect", "exhibit"}:
+        return "Here is the program outline.\nYou may open it on your phone."
+    return "Here is the event brochure.\nYou may download it to your phone."
+
+
 def _message_menu_label(event_type: str | None) -> str:
     key = _event_type_key(event_type)
     labels = {
@@ -151,6 +182,22 @@ def _message_menu_description(event_type: str | None) -> str:
         "default": "Send a message",
     }
     return descriptions[key]
+
+
+def _supports_ai_generate(event_type: str | None) -> bool:
+    return _event_type_key(event_type) in {"farewell", "celebrate"}
+
+
+def _menu_option_lines(event_type: str | None) -> list[str]:
+    lines: list[str] = [f"1. 📄 {_brochure_menu_label(event_type)}"]
+    if _supports_donations(event_type):
+        lines.append("2. 💝 Give / Donate")
+    lines.append(f"3. 🕊️ {_message_menu_label(event_type)}")
+    lines.append("4. 📍 Location")
+    if _supports_photos(event_type):
+        lines.append("5. 📷 Photos")
+    lines.append("6. ☎️ Contact Us")
+    return lines
 
 
 def _predefined_messages(event_type: str | None) -> list[str] | None:
@@ -178,13 +225,25 @@ def _message_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
     if _has_predefined_messages(event_type):
         return (
-            f"{label}: choose a message option below or type your own message.\n"
+            f"{label}: choose an option below, or type your own message.\n"
             "(Reply *0* or *back* to return to the menu.)"
         )
     return (
-        f"{label}: please type your message.\n"
+        f"{label}: choose an option below, or type your own message.\n"
         "(Reply *0* or *back* to return to the menu.)"
     )
+
+
+def _ai_enhance_prompt_text(event_type: str | None) -> str:
+    label = _message_menu_label(event_type)
+    return (
+        f"{label}: type the message you want AI to enhance.\n"
+        "(Reply *0* or *back* to return to the menu.)"
+    )
+
+
+def _ai_unavailable_text() -> str:
+    return "AI assistant is not available right now. Please type your message directly."
 
 
 _MESSAGE_TEMPLATE_IDS = {
@@ -192,6 +251,9 @@ _MESSAGE_TEMPLATE_IDS = {
     "two": "msg_template_2",
     "three": "msg_template_3",
 }
+
+_MESSAGE_AI_GENERATE_ID = "ai_generate_message"
+_MESSAGE_AI_ENHANCE_ID = "ai_enhance_message"
 
 
 def _message_template_buttons(event_type: str | None) -> list[dict[str, str]]:
@@ -211,6 +273,37 @@ def _message_template_buttons(event_type: str | None) -> list[dict[str, str]]:
     ]
 
 
+def _message_option_rows(event_type: str | None) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    template_buttons = _message_template_buttons(event_type)
+    for item in template_buttons:
+        rows.append(
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "description": "Use predefined message",
+            }
+        )
+
+    if _supports_ai_generate(event_type):
+        rows.append(
+            {
+                "id": _MESSAGE_AI_GENERATE_ID,
+                "title": "Generate With AI",
+                "description": "Create a ready-to-send message",
+            }
+        )
+
+    rows.append(
+        {
+            "id": _MESSAGE_AI_ENHANCE_ID,
+            "title": "Enhance My Message",
+            "description": "Improve a message you type",
+        }
+    )
+    return rows
+
+
 def _message_success_text(event_type: str | None) -> str:
     key = _event_type_key(event_type)
     by_type = {
@@ -223,11 +316,11 @@ def _message_success_text(event_type: str | None) -> str:
     return by_type[key]
 
 
-def _resolve_message_input(text: str, event_type: str | None) -> str:
+def _resolve_message_input(text: str, event_type: str | None) -> tuple[str, str]:
     value = normalize_text(text)
     templates = _predefined_messages(event_type)
     if not templates:
-        return value
+        return value, "defined"
 
     key = value.lower()
     mapping = {
@@ -244,20 +337,18 @@ def _resolve_message_input(text: str, event_type: str | None) -> str:
         "option 3": templates[2],
         "template 3": templates[2],
     }
-    return mapping.get(key, value)
+    resolved = mapping.get(key)
+    if resolved:
+        return resolved, "predefined"
+    return value, "defined"
 
 
 def _menu_text(guest_name: str, event_type: str | None = None) -> str:
-    message_option = _message_menu_label(event_type)
+    lines = "\n".join(_menu_option_lines(event_type))
     return (
         f"Thank you, {guest_name}.\n"
         "How can we help you today?\n\n"
-        "1. 📄 Download Event Brochure\n"
-        "2. 💝 Give / Donate\n"
-        f"3. 🕊️ {message_option}\n"
-        "4. 📍 Location\n"
-        "5. 📷 Photos\n"
-        "6. ☎️ Contact Us"
+        f"{lines}"
     )
 
 
@@ -493,6 +584,43 @@ def _handle_photo_action(
     raise ValueError(f"Unknown photo action: {action}")
 
 
+def _submit_event_message(
+    *,
+    backend: BackendClient,
+    session: Session,
+    sender_key: str,
+    phone_number: str,
+    store: SessionStore,
+    message_text: str,
+    message_type: str,
+):
+    result = backend.submit_condolence(
+        session.event_id,
+        session.guest_id,
+        message_text,
+        message_type=message_type,
+        token=session.backend_token,
+    )
+
+    if result.status == "error" and _looks_like_auth_error(result.error):
+        if _refresh_guest_auth_if_possible(
+            backend=backend,
+            sender_key=sender_key,
+            session=session,
+            phone_number=phone_number,
+            store=store,
+        ):
+            result = backend.submit_condolence(
+                session.event_id,
+                session.guest_id,
+                message_text,
+                message_type=message_type,
+                token=session.backend_token,
+            )
+
+    return result
+
+
 def handle_incoming_message(
     *,
     sender_key: str,
@@ -500,6 +628,7 @@ def handle_incoming_message(
     store: SessionStore,
     backend: BackendClient,
     settings: Settings,
+    ai_writer: AIMessageWriter | None = None,
 ) -> OutgoingMessage:
     text = normalize_text(incoming_text)
     choice = _normalize_choice(text)
@@ -527,18 +656,30 @@ def handle_incoming_message(
 
     if choice == "help":
         option_three_label = _message_menu_label(session.event_type)
-        help_text = (
-            "You can reply with:\n"
-            "- *DEMO* (or your event code) to start\n"
-            "- *1* for brochure\n"
-            "- *2* to donate\n"
-            f"- *3* to {option_three_label.lower()}\n"
-            "- *4* for location\n"
-            "- *5* for photos\n"
-            "- *6* for contact us\n"
-            "- *0* to show the menu\n"
-            "- *restart* to start over"
+        option_one_text = _brochure_menu_label(session.event_type).lower()
+        help_lines = [
+            "You can reply with:",
+            "- *DEMO* (or your event code) to start",
+            f"- *1* for {option_one_text}",
+        ]
+        if _supports_donations(session.event_type):
+            help_lines.append("- *2* to donate")
+        help_lines.extend(
+            [
+                f"- *3* to {option_three_label.lower()}",
+                "- *4* for location",
+            ]
         )
+        if _supports_photos(session.event_type):
+            help_lines.append("- *5* for photos")
+        help_lines.extend(
+            [
+                "- *6* for contact us",
+                "- *0* to show the menu",
+                "- *restart* to start over",
+            ]
+        )
+        help_text = "\n".join(help_lines)
         # If we already have a name, include the menu for convenience.
         if session.guest_name:
             help_text = help_text + "\n\n" + _menu_text(session.guest_name, session.event_type)
@@ -829,15 +970,14 @@ def handle_incoming_message(
                 # Stay in MENU state and show menu again after sending the brochure.
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
-                    text=(
-                        "Here is the event brochure.\n"
-                        "You may download it to your phone."
-                        + _menu_hint()
-                    ),
+                    text=(_brochure_ready_text(session.event_type) + _menu_hint()),
                     media_url=brochure.brochure.media_url,
                 )
 
             if choice == "donate":
+                if not _supports_donations(session.event_type):
+                    return OutgoingMessage(text="Donations are not available for this event." + _menu_hint())
+
                 if not session.event_id:
                     return OutgoingMessage(text="Missing event context. Please type 'restart'.")
 
@@ -855,11 +995,13 @@ def handle_incoming_message(
             if choice == "condolence":
                 session.state = ConversationState.WAIT_CONDOLENCE.value
                 store.upsert(sender_key, session)
-                buttons = _message_template_buttons(session.event_type)
+                rows = _message_option_rows(session.event_type)
                 return OutgoingMessage(
                     text=_message_prompt_text(session.event_type),
-                    interactive_menu=bool(buttons),
-                    interactive_buttons=buttons or None,
+                    interactive_menu=bool(rows),
+                    interactive_button_text="Choose message option",
+                    interactive_section_title=_message_menu_label(session.event_type),
+                    interactive_rows=rows or None,
                 )
 
             if choice == "location":
@@ -915,6 +1057,9 @@ def handle_incoming_message(
                 )
 
             if choice == "photos":
+                if not _supports_photos(session.event_type):
+                    return OutgoingMessage(text="Photos are not available for this event." + _menu_hint())
+
                 session.state = ConversationState.WAIT_PHOTOS_MENU.value
                 store.upsert(sender_key, session)
                 return OutgoingMessage(
@@ -926,6 +1071,9 @@ def handle_incoming_message(
                 )
 
             if choice in {"upload_photos", "download_photos"}:
+                if not _supports_photos(session.event_type):
+                    return OutgoingMessage(text="Photos are not available for this event." + _menu_hint())
+
                 session.state = ConversationState.MENU.value
                 return _handle_photo_action(
                     action=choice,
@@ -948,6 +1096,12 @@ def handle_incoming_message(
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
             return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
+
+        if not _supports_donations(session.event_type):
+            session.state = ConversationState.MENU.value
+            session.donation_reference_name = None
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Donations are not available for this event." + _menu_hint())
 
         if not session.donation_reference_name:
             session.state = ConversationState.WAIT_DONATION_REFERENCE.value
@@ -998,6 +1152,7 @@ def handle_incoming_message(
                     store=store,
                     backend=backend,
                     settings=settings,
+                    ai_writer=ai_writer,
                 )
             return OutgoingMessage(text="Please enter a valid number for the amount (e.g., 50).")
 
@@ -1062,6 +1217,12 @@ def handle_incoming_message(
             store.upsert(sender_key, session)
             return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
 
+        if not _supports_donations(session.event_type):
+            session.state = ConversationState.MENU.value
+            session.donation_reference_name = None
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Donations are not available for this event." + _menu_hint())
+
         if choice == "back" or choice == "menu":
             session.state = ConversationState.MENU.value
             session.donation_reference_name = None
@@ -1078,6 +1239,7 @@ def handle_incoming_message(
                 store=store,
                 backend=backend,
                 settings=settings,
+                ai_writer=ai_writer,
             )
 
         reference_name = normalize_text(text)
@@ -1126,16 +1288,6 @@ def handle_incoming_message(
                 guest_name=session.guest_name,
             )
 
-        if normalize_text(text).lower() in {"options", "list", "templates"}:
-            buttons = _message_template_buttons(session.event_type)
-            return OutgoingMessage(
-                text=_message_prompt_text(session.event_type),
-                interactive_menu=bool(buttons),
-                interactive_buttons=buttons or None,
-            )
-
-        message_to_send = _resolve_message_input(text, session.event_type)
-
         # Allow menu shortcuts in this state.
         if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
             session.state = ConversationState.MENU.value
@@ -1146,37 +1298,115 @@ def handle_incoming_message(
                 store=store,
                 backend=backend,
                 settings=settings,
+                ai_writer=ai_writer,
             )
 
-        if not message_to_send:
-            buttons = _message_template_buttons(session.event_type)
+        if normalize_text(text).lower() in {"options", "list", "templates"}:
+            rows = _message_option_rows(session.event_type)
             return OutgoingMessage(
                 text=_message_prompt_text(session.event_type),
-                interactive_menu=bool(buttons),
-                interactive_buttons=buttons or None,
+                interactive_menu=bool(rows),
+                interactive_button_text="Choose message option",
+                interactive_section_title=_message_menu_label(session.event_type),
+                interactive_rows=rows or None,
             )
 
-        result = backend.submit_condolence(
-            session.event_id,
-            session.guest_id,
-            message_to_send,
-            token=session.backend_token,
-        )
+        if choice in {"ai_generate", _MESSAGE_AI_GENERATE_ID}:
+            if not _supports_ai_generate(session.event_type):
+                return OutgoingMessage(
+                    text=(
+                        "AI generation is available for Yala Farewell and Yala Celebrate only."
+                        + _menu_hint()
+                    )
+                )
 
-        if result.status == "error" and _looks_like_auth_error(result.error):
-            if _refresh_guest_auth_if_possible(
+            if ai_writer is None:
+                rows = _message_option_rows(session.event_type)
+                return OutgoingMessage(
+                    text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
+                    interactive_menu=bool(rows),
+                    interactive_button_text="Choose message option",
+                    interactive_section_title=_message_menu_label(session.event_type),
+                    interactive_rows=rows or None,
+                )
+
+            ai_result = ai_writer.generate_message(
+                event_type=_event_type_key(session.event_type),
+                event_name=session.event_name,
+                guest_name=session.guest_name,
+            )
+            if ai_result.status != "ready" or not ai_result.text:
+                rows = _message_option_rows(session.event_type)
+                err = ai_result.error or "We could not generate a message right now"
+                return OutgoingMessage(
+                    text=(f"Sorry, {err}.\n\n" + _message_prompt_text(session.event_type)),
+                    interactive_menu=bool(rows),
+                    interactive_button_text="Choose message option",
+                    interactive_section_title=_message_menu_label(session.event_type),
+                    interactive_rows=rows or None,
+                )
+
+            message_to_send = normalize_text(ai_result.text)
+            result = _submit_event_message(
                 backend=backend,
-                sender_key=sender_key,
                 session=session,
+                sender_key=sender_key,
                 phone_number=phone_number,
                 store=store,
-            ):
-                result = backend.submit_condolence(
-                    session.event_id,
-                    session.guest_id,
-                    message_to_send,
-                    token=session.backend_token,
+                message_text=message_to_send,
+                message_type="ai_generated",
+            )
+
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+
+            if result.status == "ok":
+                return OutgoingMessage(
+                    text=(
+                        "Thank you.\n"
+                        "Your AI-generated message has been sent.\n\n"
+                        f"Message sent:\n{message_to_send}"
+                        + _menu_hint()
+                    )
                 )
+
+            if result.status == "unavailable":
+                return OutgoingMessage(text=(result.error or "Well wishes messages are disabled for this funeral.") + _menu_hint())
+
+            return OutgoingMessage(
+                text=(
+                    "Sorry, we couldn’t send your AI-generated message right now.\n"
+                    "Please try again later."
+                    + _menu_hint()
+                )
+            )
+
+        if choice in {"ai_enhance", _MESSAGE_AI_ENHANCE_ID}:
+            session.state = ConversationState.WAIT_AI_ENHANCE_INPUT.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text=_ai_enhance_prompt_text(session.event_type))
+
+        message_to_send, message_type = _resolve_message_input(text, session.event_type)
+
+        if not message_to_send:
+            rows = _message_option_rows(session.event_type)
+            return OutgoingMessage(
+                text=_message_prompt_text(session.event_type),
+                interactive_menu=bool(rows),
+                interactive_button_text="Choose message option",
+                interactive_section_title=_message_menu_label(session.event_type),
+                interactive_rows=rows or None,
+            )
+
+        result = _submit_event_message(
+            backend=backend,
+            session=session,
+            sender_key=sender_key,
+            phone_number=phone_number,
+            store=store,
+            message_text=message_to_send,
+            message_type=message_type,
+        )
 
         session.state = ConversationState.MENU.value
         store.upsert(sender_key, session)
@@ -1201,7 +1431,124 @@ def handle_incoming_message(
             )
         )
 
+    if session.state == ConversationState.WAIT_AI_ENHANCE_INPUT.value:
+        if not session.guest_name or not session.event_id:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Missing context. Returning to main menu." + _menu_hint())
+
+        if not session.guest_id:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=(
+                    "We couldn’t identify your guest profile.\n"
+                    "Please type *restart* and try again."
+                    + _menu_hint()
+                )
+            )
+
+        if choice in {"back", "menu"}:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(
+                text=_menu_text(session.guest_name, session.event_type),
+                interactive_menu=True,
+                guest_name=session.guest_name,
+            )
+
+        if choice in {"brochure", "donate", "condolence", "location", "contact", "photos", "upload_photos", "download_photos"}:
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return handle_incoming_message(
+                sender_key=sender_key,
+                incoming_text=choice,
+                store=store,
+                backend=backend,
+                settings=settings,
+                ai_writer=ai_writer,
+            )
+
+        if normalize_text(text).lower() in {"options", "list", "templates"}:
+            return OutgoingMessage(text=_ai_enhance_prompt_text(session.event_type))
+
+        if choice in {"ai_generate", _MESSAGE_AI_GENERATE_ID}:
+            session.state = ConversationState.WAIT_CONDOLENCE.value
+            store.upsert(sender_key, session)
+            return handle_incoming_message(
+                sender_key=sender_key,
+                incoming_text=choice,
+                store=store,
+                backend=backend,
+                settings=settings,
+                ai_writer=ai_writer,
+            )
+
+        if choice in {"ai_enhance", _MESSAGE_AI_ENHANCE_ID}:
+            return OutgoingMessage(text=_ai_enhance_prompt_text(session.event_type))
+
+        if not text:
+            return OutgoingMessage(text=_ai_enhance_prompt_text(session.event_type))
+
+        if ai_writer is None:
+            session.state = ConversationState.WAIT_CONDOLENCE.value
+            store.upsert(sender_key, session)
+            rows = _message_option_rows(session.event_type)
+            return OutgoingMessage(
+                text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
+                interactive_menu=bool(rows),
+                interactive_button_text="Choose message option",
+                interactive_section_title=_message_menu_label(session.event_type),
+                interactive_rows=rows or None,
+            )
+
+        draft = normalize_text(text)
+        ai_result = ai_writer.enhance_message(event_type=_event_type_key(session.event_type), draft=draft)
+        if ai_result.status != "ready" or not ai_result.text:
+            err = ai_result.error or "We could not enhance your message right now"
+            return OutgoingMessage(text=f"Sorry, {err}.\n\n" + _ai_enhance_prompt_text(session.event_type))
+
+        enhanced_message = normalize_text(ai_result.text)
+        result = _submit_event_message(
+            backend=backend,
+            session=session,
+            sender_key=sender_key,
+            phone_number=phone_number,
+            store=store,
+            message_text=enhanced_message,
+            message_type="ai_enhanced",
+        )
+
+        session.state = ConversationState.MENU.value
+        store.upsert(sender_key, session)
+
+        if result.status == "ok":
+            return OutgoingMessage(
+                text=(
+                    "Thank you.\n"
+                    "Your AI-enhanced message has been sent.\n\n"
+                    f"Message sent:\n{enhanced_message}"
+                    + _menu_hint()
+                )
+            )
+
+        if result.status == "unavailable":
+            return OutgoingMessage(text=(result.error or "Well wishes messages are disabled for this funeral.") + _menu_hint())
+
+        return OutgoingMessage(
+            text=(
+                "Sorry, we couldn’t send your AI-enhanced message right now.\n"
+                "Please try again later."
+                + _menu_hint()
+            )
+        )
+
     if session.state == ConversationState.WAIT_PHOTOS_MENU.value:
+        if not _supports_photos(session.event_type):
+            session.state = ConversationState.MENU.value
+            store.upsert(sender_key, session)
+            return OutgoingMessage(text="Photos are not available for this event." + _menu_hint())
+
         if not session.guest_name or not session.event_id:
             session.state = ConversationState.MENU.value
             store.upsert(sender_key, session)
@@ -1225,6 +1572,7 @@ def handle_incoming_message(
                 store=store,
                 backend=backend,
                 settings=settings,
+                ai_writer=ai_writer,
             )
 
         photo_choice = choice

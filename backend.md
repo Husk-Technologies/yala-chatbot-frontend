@@ -294,14 +294,12 @@ Any additional auth headers, if required by the API (for example, Authorization)
 
 Body
 Send a JSON object:
-
-
 JSON
-
 {
     "funeralUniqueCode":"DE2022",
     "guestId":"6975a5dca73dfa0d03945fd6",
-    "message":"Sorry for your lost my dear Kwesi."
+    "message":"Sorry for your lost my dear Kwesi.",
+    "messageType":"defined" | "predefined",
 }
 
 

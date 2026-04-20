@@ -413,11 +413,15 @@ class HttpBackendClient(BackendClient):
         event_id: str,
         guest_id: str,
         message: str,
+        message_type: str = "defined",
         token: str | None = None,
     ) -> SubmitResult:
         funeral_code = (event_id or "").strip()
         guest_id_norm = (guest_id or "").strip()
         msg = (message or "").strip()
+        msg_type = (message_type or "defined").strip().lower().replace(" ", "_")
+        if msg_type not in {"defined", "predefined", "ai_generated", "ai_enhanced"}:
+            msg_type = "defined"
         if not funeral_code or not guest_id_norm or not msg:
             return SubmitResult(status="error", error="Missing required fields")
 
@@ -427,6 +431,7 @@ class HttpBackendClient(BackendClient):
                 "funeralUniqueCode": funeral_code,
                 "guestId": guest_id_norm,
                 "message": msg,
+                "messageType": msg_type,
             },
             bearer_token=token,
         )

@@ -44,6 +44,7 @@ app = Flask(__name__)
 from .backend.http_client import HttpBackendClient, HttpBackendConfig
 from .config import SETTINGS
 from .conversation.handlers import handle_incoming_message
+from .integrations.ai_writer import OpenAIMessageWriter
 from .integrations.meta_cloud import MetaWhatsAppCloud
 from .storage.session_store import SessionStore
 from .storage.redis_session_store import RedisDedupe, RedisLock, RedisSessionStore, create_redis_client
@@ -95,6 +96,11 @@ BACKEND = HttpBackendClient(
     )
 )
 META = MetaWhatsAppCloud(SETTINGS)
+AI_WRITER = OpenAIMessageWriter(SETTINGS)
+if AI_WRITER.is_configured():
+    logger.info("AI message assistant enabled (model=%s)", SETTINGS.ai_model)
+else:
+    logger.info("AI message assistant not configured")
 
 # Keep a small ring buffer of recent Meta webhook receipts for debugging.
 _META_LAST: list[dict[str, object]] = []
@@ -252,6 +258,26 @@ def _event_type_key(event_type: str | None) -> str:
     return "default"
 
 
+def _supports_donations(event_type: str | None) -> bool:
+    return _event_type_key(event_type) not in {"connect", "exhibit"}
+
+
+def _supports_photos(event_type: str | None) -> bool:
+    return _event_type_key(event_type) not in {"connect", "exhibit"}
+
+
+def _brochure_menu_label(event_type: str | None) -> str:
+    if _event_type_key(event_type) in {"connect", "exhibit"}:
+        return "Get Program Outline"
+    return "Download Event Brochure"
+
+
+def _brochure_menu_description(event_type: str | None) -> str:
+    if _event_type_key(event_type) in {"connect", "exhibit"}:
+        return "Get Event Program Outline"
+    return "Get Event Brochure"
+
+
 def _message_menu_label(event_type: str | None) -> str:
     labels = {
         "farewell": "Send Condolence",
@@ -274,31 +300,30 @@ def _message_menu_description(event_type: str | None) -> str:
     return descriptions[_event_type_key(event_type)]
 
 
+def _menu_option_lines(event_type: str | None) -> list[str]:
+    lines: list[str] = [f"1. 📄 {_brochure_menu_label(event_type)}"]
+    if _supports_donations(event_type):
+        lines.append("2. 💝 Give / Donate")
+    lines.append(f"3. 🕊️ {_message_menu_label(event_type)}")
+    lines.append("4. 📍 Location")
+    if _supports_photos(event_type):
+        lines.append("5. 📷 Photos")
+    lines.append("6. ☎️ Contact Us")
+    return lines
+
+
 def _menu_footer_text(guest_name: str, event_type: str | None = None) -> str:
-    message_option = _message_menu_label(event_type)
+    lines = "\n".join(_menu_option_lines(event_type))
     # Must match the text version used by the conversation handler.
     return (
         f"Thank you, {guest_name}.\n"
         "How can we help you today?\n\n"
-        "1. 📄 Download Event Brochure\n"
-        "2. 💝 Give / Donate\n"
-        f"3. 🕊️ {message_option}\n"
-        "4. 📍 Location\n"
-        "5. 📷 Photos\n"
-        "6. ☎️ Contact Us"
+        f"{lines}"
     )
 
 
 def _menu_marker(event_type: str | None = None) -> str:
-    message_option = _message_menu_label(event_type)
-    return (
-        "\n1. 📄 Download Event Brochure\n"
-        "2. 💝 Give / Donate\n"
-        f"3. 🕊️ {message_option}\n"
-        "4. 📍 Location\n"
-        "5. 📷 Photos\n"
-        "6. ☎️ Contact Us"
-    )
+    return "\n" + "\n".join(_menu_option_lines(event_type))
 
 
 def _strip_menu_footer(text: str, guest_name: str | None, event_type: str | None = None) -> tuple[str, bool]:
@@ -390,6 +415,7 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
                 store=SESSION_STORE,
                 backend=BACKEND,
                 settings=SETTINGS,
+                ai_writer=AI_WRITER,
             )
 
             # Pull the latest session so we can keep menu behavior consistent even when
@@ -422,17 +448,25 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
                     body = main_text or "Please choose an option."
                 else:
                     rows = [
-                        {"id": "brochure", "title": "Download Brochure", "description": "Get Event Brochure"},
-                        {"id": "donate", "title": "Give / Donate", "description": "Support the Family"},
+                        {
+                            "id": "brochure",
+                            "title": _brochure_menu_label(event_type),
+                            "description": _brochure_menu_description(event_type),
+                        },
+                    ]
+                    if _supports_donations(event_type):
+                        rows.append({"id": "donate", "title": "Give / Donate", "description": "Support the Family"})
+                    rows.append(
                         {
                             "id": "condolence",
                             "title": _message_menu_label(event_type),
                             "description": _message_menu_description(event_type),
-                        },
-                        {"id": "location", "title": "Location", "description": "View Venue Details"},
-                        {"id": "photos", "title": "Photos", "description": "Upload or Download Event Photos"},
-                        {"id": "contact", "title": "Contact Us", "description": "Call or Visit Our Website"},
-                    ]
+                        }
+                    )
+                    rows.append({"id": "location", "title": "Location", "description": "View Venue Details"})
+                    if _supports_photos(event_type):
+                        rows.append({"id": "photos", "title": "Photos", "description": "Upload or Download Event Photos"})
+                    rows.append({"id": "contact", "title": "Contact Us", "description": "Call or Visit Our Website"})
                     section_title = outgoing.interactive_section_title or "Yala Menu"
                     menu_prompt = (
                         f"Thank you, {guest_name}.\nHow can we help you today?"

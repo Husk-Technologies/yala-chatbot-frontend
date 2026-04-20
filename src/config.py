@@ -58,5 +58,15 @@ class Settings:
         self.sentry_environment = os.getenv("SENTRY_ENVIRONMENT", "production").strip() or "production"
         self.sentry_traces_sample_rate = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1") or "0.1")
 
+        # Optional AI assistant used for generating/enhancing guest messages.
+        # Compatible with OpenAI-style chat completion APIs.
+        self.ai_api_key = (
+            os.getenv("AI_API_KEY", "").strip()
+            or os.getenv("OPENAI_API_KEY", "").strip()
+        )
+        self.ai_base_url = os.getenv("AI_BASE_URL", "https://api.openai.com/v1").strip() or "https://api.openai.com/v1"
+        self.ai_model = os.getenv("AI_MODEL", "gpt-4o-mini").strip() or "gpt-4o-mini"
+        self.ai_timeout_seconds = _env_int("AI_TIMEOUT_SECONDS", 20)
+
 
 SETTINGS = Settings()
