@@ -223,23 +223,10 @@ def _has_predefined_messages(event_type: str | None) -> bool:
 
 def _message_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
-    lines = [f"{label}: choose an option below, or type your own message."]
-
-    templates = _message_template_buttons(event_type)
-    if templates:
-        lines.append("")
-        lines.append("Predefined templates:")
-        for idx, item in enumerate(templates, start=1):
-            lines.append(f"{idx}. {item['title']}")
-
-    lines.append("")
-    if _supports_ai_generate(event_type):
-        lines.append("AI options: Generate With AI, Enhance My Message")
-    else:
-        lines.append("AI option: Enhance My Message")
-
-    lines.append("(Reply *0* or *back* to return to the menu.)")
-    return "\n".join(lines)
+    return (
+        f"{label}: choose an option below, or type your own message.\n"
+        "(Reply *0* or *back* to return to the menu.)"
+    )
 
 
 def _ai_enhance_prompt_text(event_type: str | None) -> str:
@@ -553,6 +540,20 @@ def _looks_like_auth_error(error: str | None) -> bool:
     )
 
 
+def _looks_like_message_type_compat_error(error: str | None) -> bool:
+    if not error:
+        return False
+    e = str(error).lower()
+    if "disabled" in e:
+        return False
+    return (
+        "message type" in e
+        or "messagetype" in e
+        or "invalid type" in e
+        or "an error occurred while submitting" in e
+    )
+
+
 def _refresh_guest_auth_if_possible(
     *,
     backend: BackendClient,
@@ -700,13 +701,16 @@ def _submit_event_message(
     message_text: str,
     message_type: str,
 ):
-    result = backend.submit_condolence(
-        session.event_id,
-        session.guest_id,
-        message_text,
-        message_type=message_type,
-        token=session.backend_token,
-    )
+    def _submit_once(mt: str):
+        return backend.submit_condolence(
+            session.event_id,
+            session.guest_id,
+            message_text,
+            message_type=mt,
+            token=session.backend_token,
+        )
+
+    result = _submit_once(message_type)
 
     if result.status == "error" and _looks_like_auth_error(result.error):
         if _refresh_guest_auth_if_possible(
@@ -716,13 +720,24 @@ def _submit_event_message(
             phone_number=phone_number,
             store=store,
         ):
-            result = backend.submit_condolence(
-                session.event_id,
-                session.guest_id,
-                message_text,
-                message_type=message_type,
-                token=session.backend_token,
-            )
+            result = _submit_once(message_type)
+
+    # Backward-compat fallback: some backends still only accept defined/predefined.
+    if (
+        message_type in {"ai_generated", "ai_enhanced"}
+        and result.status in {"error", "unavailable"}
+        and _looks_like_message_type_compat_error(result.error)
+    ):
+        result = _submit_once("defined")
+        if result.status == "error" and _looks_like_auth_error(result.error):
+            if _refresh_guest_auth_if_possible(
+                backend=backend,
+                sender_key=sender_key,
+                session=session,
+                phone_number=phone_number,
+                store=store,
+            ):
+                result = _submit_once("defined")
 
     return result
 
