@@ -185,6 +185,14 @@ class MetaWhatsAppCloud:
             logger.error("Meta send_list_menu requires at least one row")
             return False
 
+        button_label = (button_text or "Choose").strip() or "Choose"
+        if len(button_label) > 20:
+            logger.warning(
+                "Meta list button label exceeded 20 chars; truncating: %r",
+                button_label,
+            )
+            button_label = button_label[:20].rstrip() or "Choose"
+
         url = self._endpoint(f"{self._settings.meta_phone_number_id}/messages")
         payload: dict[str, Any] = {
             "messaging_product": "whatsapp",
@@ -194,7 +202,7 @@ class MetaWhatsAppCloud:
                 "type": "list",
                 "body": {"text": body},
                 "action": {
-                    "button": button_text,
+                    "button": button_label,
                     "sections": [
                         {
                             "title": section_title,

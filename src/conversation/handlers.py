@@ -223,15 +223,23 @@ def _has_predefined_messages(event_type: str | None) -> bool:
 
 def _message_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
-    if _has_predefined_messages(event_type):
-        return (
-            f"{label}: choose an option below, or type your own message.\n"
-            "(Reply *0* or *back* to return to the menu.)"
-        )
-    return (
-        f"{label}: choose an option below, or type your own message.\n"
-        "(Reply *0* or *back* to return to the menu.)"
-    )
+    lines = [f"{label}: choose an option below, or type your own message."]
+
+    templates = _message_template_buttons(event_type)
+    if templates:
+        lines.append("")
+        lines.append("Predefined templates:")
+        for idx, item in enumerate(templates, start=1):
+            lines.append(f"{idx}. {item['title']}")
+
+    lines.append("")
+    if _supports_ai_generate(event_type):
+        lines.append("AI options: Generate With AI, Enhance My Message")
+    else:
+        lines.append("AI option: Enhance My Message")
+
+    lines.append("(Reply *0* or *back* to return to the menu.)")
+    return "\n".join(lines)
 
 
 def _ai_enhance_prompt_text(event_type: str | None) -> str:
@@ -254,6 +262,8 @@ _MESSAGE_TEMPLATE_IDS = {
 
 _MESSAGE_AI_GENERATE_ID = "ai_generate_message"
 _MESSAGE_AI_ENHANCE_ID = "ai_enhance_message"
+_MESSAGE_LIST_BUTTON_TEXT = "Message options"
+_PHOTO_LIST_BUTTON_TEXT = "Photo options"
 
 
 def _message_template_buttons(event_type: str | None) -> list[dict[str, str]]:
@@ -337,6 +347,19 @@ def _resolve_message_input(text: str, event_type: str | None) -> tuple[str, str]
         "option 3": templates[2],
         "template 3": templates[2],
     }
+
+    template_buttons = _message_template_buttons(event_type)
+    for idx, item in enumerate(template_buttons):
+        if idx >= len(templates):
+            continue
+        title_key = normalize_text(item.get("title") or "").lower()
+        if not title_key:
+            continue
+        mapping[title_key] = templates[idx]
+        alt_key = " ".join(title_key.replace("&", "and").split())
+        if alt_key and alt_key != title_key:
+            mapping[alt_key] = templates[idx]
+
     resolved = mapping.get(key)
     if resolved:
         return resolved, "predefined"
@@ -999,7 +1022,7 @@ def handle_incoming_message(
                 return OutgoingMessage(
                     text=_message_prompt_text(session.event_type),
                     interactive_menu=bool(rows),
-                    interactive_button_text="Choose message option",
+                    interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
                     interactive_section_title=_message_menu_label(session.event_type),
                     interactive_rows=rows or None,
                 )
@@ -1065,7 +1088,7 @@ def handle_incoming_message(
                 return OutgoingMessage(
                     text=_photos_prompt_text(),
                     interactive_menu=True,
-                    interactive_button_text="Choose photo option",
+                    interactive_button_text=_PHOTO_LIST_BUTTON_TEXT,
                     interactive_section_title="Event Photos",
                     interactive_rows=_photos_rows(),
                 )
@@ -1306,7 +1329,7 @@ def handle_incoming_message(
             return OutgoingMessage(
                 text=_message_prompt_text(session.event_type),
                 interactive_menu=bool(rows),
-                interactive_button_text="Choose message option",
+                interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
                 interactive_section_title=_message_menu_label(session.event_type),
                 interactive_rows=rows or None,
             )
@@ -1325,7 +1348,7 @@ def handle_incoming_message(
                 return OutgoingMessage(
                     text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
                     interactive_menu=bool(rows),
-                    interactive_button_text="Choose message option",
+                    interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
                     interactive_section_title=_message_menu_label(session.event_type),
                     interactive_rows=rows or None,
                 )
@@ -1341,7 +1364,7 @@ def handle_incoming_message(
                 return OutgoingMessage(
                     text=(f"Sorry, {err}.\n\n" + _message_prompt_text(session.event_type)),
                     interactive_menu=bool(rows),
-                    interactive_button_text="Choose message option",
+                    interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
                     interactive_section_title=_message_menu_label(session.event_type),
                     interactive_rows=rows or None,
                 )
@@ -1393,7 +1416,7 @@ def handle_incoming_message(
             return OutgoingMessage(
                 text=_message_prompt_text(session.event_type),
                 interactive_menu=bool(rows),
-                interactive_button_text="Choose message option",
+                interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
                 interactive_section_title=_message_menu_label(session.event_type),
                 interactive_rows=rows or None,
             )
@@ -1497,7 +1520,7 @@ def handle_incoming_message(
             return OutgoingMessage(
                 text=(_ai_unavailable_text() + "\n\n" + _message_prompt_text(session.event_type)),
                 interactive_menu=bool(rows),
-                interactive_button_text="Choose message option",
+                interactive_button_text=_MESSAGE_LIST_BUTTON_TEXT,
                 interactive_section_title=_message_menu_label(session.event_type),
                 interactive_rows=rows or None,
             )
@@ -1595,7 +1618,7 @@ def handle_incoming_message(
         return OutgoingMessage(
             text=_photos_prompt_text(),
             interactive_menu=True,
-            interactive_button_text="Choose photo option",
+            interactive_button_text=_PHOTO_LIST_BUTTON_TEXT,
             interactive_section_title="Event Photos",
             interactive_rows=_photos_rows(),
         )
