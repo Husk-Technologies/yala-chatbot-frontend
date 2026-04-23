@@ -206,6 +206,19 @@ def _message_menu_description(event_type: str | None) -> str:
     return descriptions[key]
 
 
+def _template_row_title(message: str) -> str:
+    words = normalize_text(message).split()
+    if not words:
+        return "Message"
+
+    for count in (4, 3, 2, 1):
+        title = " ".join(words[:count]).rstrip(",")
+        if title and len(title) <= 24:
+            return title
+
+    return "Message"
+
+
 def _supports_ai_generate(event_type: str | None) -> bool:
     return _event_type_key(event_type) in {"farewell", "celebrate"}
 
@@ -265,7 +278,7 @@ def _message_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
     if _event_type_key(event_type) in {"farewell", "celebrate"}:
         return (
-            f"{label}: choose one of the up to 4 suggested full-sentence messages below, or type your own message.\n"
+            f"{label}: choose one of the up to 4 suggested full-sentence messages below, use Generate With AI, or type your own message.\n"
             "(Reply *0* or *back* to return to the menu.)"
         )
     return (
@@ -432,11 +445,10 @@ def _message_template_buttons(event_type: str | None) -> list[dict[str, str]]:
         return []
 
     key = _event_type_key(event_type)
-    title_prefix = "Condolence" if key == "farewell" else "Well Wish"
     return [
         {
             "id": f"{key}_{idx:02d}",
-            "title": f"{title_prefix} {idx}",
+            "title": _template_row_title(message),
             "message": message,
         }
         for idx, message in enumerate(messages, start=1)
@@ -449,7 +461,7 @@ def _message_option_rows(event_type: str | None) -> list[dict[str, str]]:
         if not template_buttons:
             return []
         selected = random.sample(template_buttons, k=min(4, len(template_buttons)))
-        return [
+        rows = [
             {
                 "id": item["id"],
                 "title": item["title"],
@@ -457,6 +469,14 @@ def _message_option_rows(event_type: str | None) -> list[dict[str, str]]:
             }
             for item in selected
         ]
+        rows.append(
+            {
+                "id": _MESSAGE_AI_GENERATE_ID,
+                "title": "Generate With AI",
+                "description": "Create a ready-to-send message",
+            }
+        )
+        return rows
 
     rows: list[dict[str, str]] = []
     for item in template_buttons:
