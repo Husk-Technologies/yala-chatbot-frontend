@@ -206,17 +206,47 @@ def _message_menu_description(event_type: str | None) -> str:
     return descriptions[key]
 
 
-def _template_row_title(message: str) -> str:
-    words = normalize_text(message).split()
-    if not words:
-        return "Message"
+_FAREWELL_TEMPLATE_TITLES = [
+    "Deepest Sympathy",
+    "Heartfelt Sympathy",
+    "Thinking of You",
+    "Strength Ahead",
+    "Gentle Strength",
+    "Cherished Memories",
+    "Thoughts & Prayers",
+    "Love & Support",
+    "Peace & Healing",
+    "Comfort in Faith",
+    "Lord's Peace",
+    "Hope & Rest",
+]
 
-    for count in (4, 3, 2, 1):
-        title = " ".join(words[:count]).rstrip(",")
-        if title and len(title) <= 24:
-            return title
+_CELEBRATE_TEMPLATE_TITLES = [
+    "Joyful Wishes",
+    "Lasting Happiness",
+    "Love & Peace",
+    "Warm Wishes",
+    "Joy Today",
+    "Happy Milestone",
+    "Many Blessings",
+    "Bright Memories",
+    "Best Wishes Ahead",
+    "Blessings Ahead",
+    "Joy & Success",
+    "Bright Future",
+]
 
-    return "Message"
+
+def _template_row_title(event_type: str | None, index: int) -> str:
+    key = _event_type_key(event_type)
+    titles_by_type = {
+        "farewell": _FAREWELL_TEMPLATE_TITLES,
+        "celebrate": _CELEBRATE_TEMPLATE_TITLES,
+    }
+    titles = titles_by_type.get(key)
+    if titles and 1 <= index <= len(titles):
+        return titles[index - 1]
+    return f"Message {index}"
 
 
 def _supports_ai_generate(event_type: str | None) -> bool:
@@ -448,7 +478,7 @@ def _message_template_buttons(event_type: str | None) -> list[dict[str, str]]:
     return [
         {
             "id": f"{key}_{idx:02d}",
-            "title": _template_row_title(message),
+            "title": _template_row_title(event_type, idx),
             "message": message,
         }
         for idx, message in enumerate(messages, start=1)
