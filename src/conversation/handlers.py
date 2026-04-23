@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import random
 
 from ..backend.client import BackendClient
 from ..config import Settings
@@ -225,14 +226,32 @@ def _predefined_messages(event_type: str | None) -> list[str] | None:
     key = _event_type_key(event_type)
     by_type: dict[str, list[str]] = {
         "farewell": [
-            "Please accept my deepest condolences. May your loved one rest in peace.",
-            "My thoughts and prayers are with you and your family during this difficult time.",
-            "Wishing your family comfort, strength, and peace in loving memory.",
+            "My deepest condolences to the family during this difficult time.",
+            "Please accept my heartfelt sympathy and prayers for comfort and peace.",
+            "I am deeply sorry for your loss and am keeping you in my thoughts.",
+            "May God give you strength, comfort, and peace in the days ahead.",
+            "Wishing you gentle strength as you remember and honor your loved one.",
+            "May the cherished memories you shared bring you comfort and peace.",
+            "Please know that you and your family are in my thoughts and prayers.",
+            "May love and support surround you and help carry you through this loss.",
+            "Sending sincere condolences and wishing the family peace and healing.",
+            "My heart is with the family, and I pray for comfort in this time.",
+            "May the Lord surround you with peace and strength today and beyond.",
+            "I am truly sorry for your loss and wish you hope, comfort, and rest.",
         ],
         "celebrate": [
-            "Congratulations on your celebration. Wishing you joy and lifelong happiness.",
-            "May this special occasion be filled with love, laughter, and beautiful memories.",
-            "Sending warm wishes for a wonderful celebration and a blessed future.",
+            "Wishing you a joyful celebration filled with laughter and memories.",
+            "Congratulations on this occasion, and may it bring lasting happiness.",
+            "May your celebration be filled with love, peace, and wonderful moments.",
+            "Sending warm wishes as you celebrate this beautiful milestone today.",
+            "May today bring joy to your heart and blessings to your home.",
+            "Wishing you and your loved ones a memorable and happy celebration.",
+            "Congratulations, and may this special day bring many blessings.",
+            "May your celebration be bright, meaningful, and full of memories.",
+            "Sending heartfelt congratulations and best wishes for the days ahead.",
+            "Wishing you happiness today and every blessing in the journey ahead.",
+            "May this celebration bring you joy, peace, and lasting success.",
+            "Congratulations on your celebration, and may your future be bright.",
         ],
     }
     return by_type.get(key)
@@ -244,6 +263,11 @@ def _has_predefined_messages(event_type: str | None) -> bool:
 
 def _message_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
+    if _event_type_key(event_type) in {"farewell", "celebrate"}:
+        return (
+            f"{label}: choose one of the up to 4 suggested full-sentence messages below, or type your own message.\n"
+            "(Reply *0* or *back* to return to the menu.)"
+        )
     return (
         f"{label}: choose an option below, or type your own message.\n"
         "(Reply *0* or *back* to return to the menu.)"
@@ -403,31 +427,44 @@ _PHOTO_LIST_BUTTON_TEXT = "Photo options"
 
 
 def _message_template_buttons(event_type: str | None) -> list[dict[str, str]]:
-    if not _has_predefined_messages(event_type):
+    messages = _predefined_messages(event_type)
+    if not messages:
         return []
 
     key = _event_type_key(event_type)
-    titles: dict[str, list[str]] = {
-        "farewell": ["Deep Condolence", "Thoughts & Prayers", "Comfort & Peace"],
-        "celebrate": ["Congratulations", "Joy & Happiness", "Warm Wishes"],
-    }
-    selected = titles[key]
+    title_prefix = "Condolence" if key == "farewell" else "Well Wish"
     return [
-        {"id": _MESSAGE_TEMPLATE_IDS["one"], "title": selected[0]},
-        {"id": _MESSAGE_TEMPLATE_IDS["two"], "title": selected[1]},
-        {"id": _MESSAGE_TEMPLATE_IDS["three"], "title": selected[2]},
+        {
+            "id": f"{key}_{idx:02d}",
+            "title": f"{title_prefix} {idx}",
+            "message": message,
+        }
+        for idx, message in enumerate(messages, start=1)
     ]
 
 
 def _message_option_rows(event_type: str | None) -> list[dict[str, str]]:
-    rows: list[dict[str, str]] = []
     template_buttons = _message_template_buttons(event_type)
+    if _event_type_key(event_type) in {"farewell", "celebrate"}:
+        if not template_buttons:
+            return []
+        selected = random.sample(template_buttons, k=min(4, len(template_buttons)))
+        return [
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "description": item["message"],
+            }
+            for item in selected
+        ]
+
+    rows: list[dict[str, str]] = []
     for item in template_buttons:
         rows.append(
             {
                 "id": item["id"],
                 "title": item["title"],
-                "description": "Use predefined message",
+                "description": item["message"],
             }
         )
 
@@ -472,32 +509,25 @@ def _resolve_message_input(text: str, event_type: str | None) -> tuple[str, str]
     key_first_line = key.splitlines()[0].strip() if "\n" in key else key
     key_compact = " ".join(key.split())
     key_compact_first_line = " ".join(key_first_line.split())
-    mapping = {
-        _MESSAGE_TEMPLATE_IDS["one"]: templates[0],
-        _MESSAGE_TEMPLATE_IDS["two"]: templates[1],
-        _MESSAGE_TEMPLATE_IDS["three"]: templates[2],
-        "1": templates[0],
-        "option 1": templates[0],
-        "template 1": templates[0],
-        "2": templates[1],
-        "option 2": templates[1],
-        "template 2": templates[1],
-        "3": templates[2],
-        "option 3": templates[2],
-        "template 3": templates[2],
-    }
 
+    mapping: dict[str, str] = {}
     template_buttons = _message_template_buttons(event_type)
-    for idx, item in enumerate(template_buttons):
-        if idx >= len(templates):
+    for item in template_buttons:
+        message_text = normalize_text(item.get("message") or "")
+        if not message_text:
             continue
-        title_key = normalize_text(item.get("title") or "").lower()
-        if not title_key:
-            continue
-        mapping[title_key] = templates[idx]
-        alt_key = " ".join(title_key.replace("&", "and").split())
-        if alt_key and alt_key != title_key:
-            mapping[alt_key] = templates[idx]
+
+        for candidate in (
+            normalize_text(item.get("id") or "").lower(),
+            normalize_text(item.get("title") or "").lower(),
+            message_text.lower(),
+        ):
+            if candidate:
+                mapping[candidate] = message_text
+
+        alt_title = normalize_text((item.get("title") or "").replace("&", "and")).lower()
+        if alt_title:
+            mapping[alt_title] = message_text
 
     resolved = (
         mapping.get(key)
