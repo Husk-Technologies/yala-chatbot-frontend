@@ -309,11 +309,11 @@ def _message_prompt_text(event_type: str | None) -> str:
     if _event_type_key(event_type) in {"farewell", "celebrate"}:
         return (
             f"{label}: choose one of the up to 4 suggested full-sentence messages below, use Generate With AI, or type your own message.\n"
-            "(Reply *0* or *back* to return to the menu.)"
+            "(Reply 0 or back to return to the menu.)"
         )
     return (
         f"{label}: choose an option below, or type your own message.\n"
-        "(Reply *0* or *back* to return to the menu.)"
+        "(Reply 0 or back to return to the menu.)"
     )
 
 
@@ -321,7 +321,7 @@ def _ai_enhance_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
     return (
         f"{label}: type the message you want AI to enhance.\n"
-        "(Reply *0* or *back* to return to the menu.)"
+        "(Reply 0 or back to return to the menu.)"
     )
 
 
@@ -330,7 +330,7 @@ def _ai_generate_prompt_text(event_type: str | None) -> str:
     return (
         f"{label}: tell AI what you want the message to say.\n"
         "For example, you can describe the tone or details you want.\n"
-        "(Reply *0* or *back* to return to the menu.)"
+        "(Reply 0 or back to return to the menu.)"
     )
 
 
