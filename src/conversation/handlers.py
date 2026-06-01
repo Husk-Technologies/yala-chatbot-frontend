@@ -330,8 +330,9 @@ def _ai_enhance_prompt_text(event_type: str | None) -> str:
 def _ai_generate_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
     return (
-        f"{label}: tell AI what you want the message to say.\n"
-        "You can mention the tone, feelings, or details you want included.\n"
+        f"{label}: tell me what you'd like to say and I'll write it for you.\n"
+        "You can include the tone (e.g. heartfelt, warm, formal), your relationship to them "
+        "(friend, colleague, family), or any details or memories you'd like mentioned.\n"
         "(Reply 0 or back to go to the menu.)"
     )
 
