@@ -228,8 +228,14 @@ JSON
 Response Fields
 success (boolean) – Indicates if the request was successful.
 message (string) – Human-readable confirmation message.
-brochureUrl (string) – Direct URL to the funeral brochure PDF file.
+brochureUrl (string) – Direct URL to the brochure file. Not limited to PDF; may point to images, video, audio, or other documents.
 brochureDownloadCount (integer) – Number of times the brochure has been downloaded.
+
+Optional Fields
+The backend may also return the following to help the bot send the file with the correct media type and filename:
+
+filename (string) – Original filename including extension (e.g. "funeral-program.pdf", "event-poster.png"). When provided, the bot uses this as the download filename for documents. If omitted, the bot derives the filename from the brochureUrl.
+mimeType (string) – MIME type of the file (e.g. "application/pdf", "image/png", "video/mp4", "audio/mpeg"). When provided, the bot uses it to pick the correct WhatsApp media type (image / video / audio / document) regardless of the URL extension. If omitted, the bot infers the media type from the URL extension.
 
 # Get funeral location
 Overview

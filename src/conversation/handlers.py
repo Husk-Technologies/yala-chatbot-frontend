@@ -15,6 +15,8 @@ from .state import ConversationState, normalize_text
 class OutgoingMessage:
     text: str
     media_url: str | None = None
+    media_filename: str | None = None
+    media_mime_type: str | None = None
     interactive_menu: bool = False
     guest_name: str | None = None
     interactive_buttons: list[dict[str, str]] | None = None
@@ -308,20 +310,20 @@ def _message_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
     if _event_type_key(event_type) in {"farewell", "celebrate"}:
         return (
-            f"{label}: choose one of the up to 4 suggested full-sentence messages below, use Generate With AI, or type your own message.\n"
-            "(Reply 0 or back to return to the menu.)"
+            f"{label}: choose a suggestion below, ask AI to write one for you, or type your own message.\n"
+            "(Reply 0 or back to go to the menu.)"
         )
     return (
         f"{label}: choose an option below, or type your own message.\n"
-        "(Reply 0 or back to return to the menu.)"
+        "(Reply 0 or back to go to the menu.)"
     )
 
 
 def _ai_enhance_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
     return (
-        f"{label}: type the message you want AI to enhance.\n"
-        "(Reply 0 or back to return to the menu.)"
+        f"{label}: type the message you want AI to improve.\n"
+        "(Reply 0 or back to go to the menu.)"
     )
 
 
@@ -329,8 +331,8 @@ def _ai_generate_prompt_text(event_type: str | None) -> str:
     label = _message_menu_label(event_type)
     return (
         f"{label}: tell AI what you want the message to say.\n"
-        "For example, you can describe the tone or details you want.\n"
-        "(Reply 0 or back to return to the menu.)"
+        "You can mention the tone, feelings, or details you want included.\n"
+        "(Reply 0 or back to go to the menu.)"
     )
 
 
@@ -1283,6 +1285,8 @@ def handle_incoming_message(
                 return OutgoingMessage(
                     text=(_brochure_ready_text(session.event_type) + _menu_hint()),
                     media_url=brochure.brochure.media_url,
+                    media_filename=brochure.brochure.filename,
+                    media_mime_type=brochure.brochure.mime_type,
                 )
 
             if choice == "donate":

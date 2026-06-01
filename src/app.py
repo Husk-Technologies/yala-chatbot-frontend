@@ -352,23 +352,52 @@ def _strip_menu_footer(text: str, guest_name: str | None, event_type: str | None
     return t, False
 
 
-def _detect_media_type(url: str) -> str:
-    """Detect media type from URL extension.
-    
-    Returns 'video' for video formats, 'document' for all others.
+def _detect_media_type(url: str, mime_type: str | None = None) -> str:
+    """Detect media kind from MIME type (preferred) or URL extension.
+
+    Returns one of: 'image', 'video', 'audio', 'document'.
     """
+    if mime_type:
+        mt = mime_type.lower().split(";", 1)[0].strip()
+        if mt.startswith("image/"):
+            return "image"
+        if mt.startswith("video/"):
+            return "video"
+        if mt.startswith("audio/"):
+            return "audio"
+        if mt:
+            return "document"
+
     if not url:
         return "document"
-    
-    # Extract path/query and normalize
-    path = url.lower().split("?")[0]  # remove query params
-    
-    video_extensions = {".mp4", ".mkv", ".mov", ".avi", ".webm", ".m3u8"}
-    for ext in video_extensions:
+
+    # Extract path, drop query/fragment, normalize
+    path = url.lower().split("?", 1)[0].split("#", 1)[0]
+
+    image_exts = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+    for ext in image_exts:
+        if path.endswith(ext):
+            return "image"
+
+    video_exts = (".mp4", ".mkv", ".mov", ".avi", ".webm", ".m3u8", ".3gp", ".3gpp")
+    for ext in video_exts:
         if path.endswith(ext):
             return "video"
-    
+
+    audio_exts = (".aac", ".m4a", ".mp3", ".ogg", ".opus", ".wav", ".amr")
+    for ext in audio_exts:
+        if path.endswith(ext):
+            return "audio"
+
     return "document"
+
+
+def _filename_from_url(url: str, default: str) -> str:
+    if not url:
+        return default
+    path = url.split("?", 1)[0].split("#", 1)[0]
+    name = path.rsplit("/", 1)[-1]
+    return name or default
 
 
 def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
@@ -489,24 +518,38 @@ def _handle_one_meta_message(from_wa: str, incoming_text: str) -> None:
                     return
                 # If interactive send fails, fall back to plain text.
 
-            # Send brochure using appropriate media type (document, video, etc.).
+            # Send brochure using appropriate media type (image, video, audio, or document).
             if outgoing.media_url:
-                media_type = _detect_media_type(outgoing.media_url)
-                
-                if media_type == "video":
+                media_type = _detect_media_type(outgoing.media_url, outgoing.media_mime_type)
+                filename = outgoing.media_filename or _filename_from_url(outgoing.media_url, "brochure.pdf")
+
+                if media_type == "image":
+                    logger.info("Sending image to %s via link: %s", from_wa, outgoing.media_url)
+                    META.send_image(
+                        to=from_wa,
+                        link=outgoing.media_url,
+                        caption=main_text,
+                    )
+                elif media_type == "video":
                     logger.info("Sending video to %s via link: %s", from_wa, outgoing.media_url)
                     META.send_video(
                         to=from_wa,
                         link=outgoing.media_url,
                         caption=main_text,
                     )
+                elif media_type == "audio":
+                    logger.info("Sending audio to %s via link: %s", from_wa, outgoing.media_url)
+                    META.send_audio(
+                        to=from_wa,
+                        link=outgoing.media_url,
+                    )
                 else:
-                    logger.info("Sending document to %s via link: %s", from_wa, outgoing.media_url)
+                    logger.info("Sending document to %s via link: %s (filename=%s)", from_wa, outgoing.media_url, filename)
                     META.send_document(
                         to=from_wa,
                         link=outgoing.media_url,
                         caption=main_text,
-                        filename="brochure.pdf",
+                        filename=filename,
                     )
             else:
                 META.send_text(to=from_wa, body=main_text)

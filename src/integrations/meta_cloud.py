@@ -92,6 +92,68 @@ class MetaWhatsAppCloud:
             logger.exception("Meta send_text exception")
             return False
 
+    def send_image(self, *, to: str, link: str, caption: str | None = None) -> bool:
+        if not self.is_configured():
+            logger.warning(
+                "Meta Cloud API not configured; cannot send image (missing META_WA_ACCESS_TOKEN or META_WA_PHONE_NUMBER_ID)"
+            )
+            return False
+
+        if not (link or "").startswith(("http://", "https://")):
+            logger.error("Meta send_image requires a public URL link; got: %r", link)
+            return False
+
+        url = self._endpoint(f"{self._settings.meta_phone_number_id}/messages")
+        image: dict[str, Any] = {"link": link}
+        if caption:
+            image["caption"] = caption
+
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "image",
+            "image": image,
+        }
+
+        try:
+            resp = self._session().post(url, headers=self._headers(), json=payload, timeout=self._timeout(20))
+            if resp.status_code >= 400:
+                self._log_meta_http_error("send_image", resp)
+                return False
+            return True
+        except Exception:  # noqa: BLE001
+            logger.exception("Meta send_image exception")
+            return False
+
+    def send_audio(self, *, to: str, link: str) -> bool:
+        if not self.is_configured():
+            logger.warning(
+                "Meta Cloud API not configured; cannot send audio (missing META_WA_ACCESS_TOKEN or META_WA_PHONE_NUMBER_ID)"
+            )
+            return False
+
+        if not (link or "").startswith(("http://", "https://")):
+            logger.error("Meta send_audio requires a public URL link; got: %r", link)
+            return False
+
+        url = self._endpoint(f"{self._settings.meta_phone_number_id}/messages")
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "audio",
+            "audio": {"link": link},
+        }
+
+        try:
+            resp = self._session().post(url, headers=self._headers(), json=payload, timeout=self._timeout(20))
+            if resp.status_code >= 400:
+                self._log_meta_http_error("send_audio", resp)
+                return False
+            return True
+        except Exception:  # noqa: BLE001
+            logger.exception("Meta send_audio exception")
+            return False
+
     def send_document(self, *, to: str, link: str, caption: str | None = None, filename: str | None = None) -> bool:
         if not self.is_configured():
             logger.warning(

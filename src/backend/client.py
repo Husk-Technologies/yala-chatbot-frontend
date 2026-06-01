@@ -23,6 +23,8 @@ class EventLookupResult:
 @dataclass(frozen=True)
 class Brochure:
     media_url: str
+    filename: str | None = None
+    mime_type: str | None = None
 
 
 @dataclass(frozen=True)

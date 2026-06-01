@@ -333,7 +333,35 @@ class HttpBackendClient(BackendClient):
                 base_for_join = base_for_join + "/"
             brochure_url = urljoin(base_for_join, brochure_url)
 
-        return BrochureResult(status="ready", brochure=Brochure(media_url=brochure_url))
+        filename = (
+            data.get("filename")
+            or data.get("fileName")
+            or data.get("name")
+        )
+        if isinstance(filename, str):
+            filename = filename.strip() or None
+        else:
+            filename = None
+
+        mime_type = (
+            data.get("mimeType")
+            or data.get("mime_type")
+            or data.get("contentType")
+            or data.get("content_type")
+        )
+        if isinstance(mime_type, str):
+            mime_type = mime_type.strip() or None
+        else:
+            mime_type = None
+
+        return BrochureResult(
+            status="ready",
+            brochure=Brochure(
+                media_url=brochure_url,
+                filename=filename,
+                mime_type=mime_type,
+            ),
+        )
 
     def get_funeral_location(self, event_id: str, token: str | None = None) -> FuneralLocationResult:
         normalized = (event_id or "").strip()
